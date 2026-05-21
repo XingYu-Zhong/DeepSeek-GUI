@@ -20,7 +20,7 @@ describe('app-ipc-schemas', () => {
   it('allows only safe external URL protocols', () => {
     expect(isSafeOpenExternalUrl('https://deepseek.com')).toBe(true)
     expect(isSafeOpenExternalUrl('http://127.0.0.1:5173')).toBe(true)
-    expect(isSafeOpenExternalUrl('mailto:support@example.com')).toBe(true)
+    expect(isSafeOpenExternalUrl('mailto:zhongxingyuemail@gmail.com')).toBe(true)
     expect(isSafeOpenExternalUrl('javascript:alert(1)')).toBe(false)
     expect(isSafeOpenExternalUrl('file:///tmp/test')).toBe(false)
     expect(() => shellOpenExternalUrlSchema.parse('javascript:alert(1)')).toThrow(
