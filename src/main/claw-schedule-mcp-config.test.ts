@@ -18,17 +18,19 @@ function createSettings(patch: Partial<AppSettingsV1['claw']['im']> = {}): AppSe
     locale: 'en',
     theme: 'system',
     uiFontScale: 'small',
-    agentProvider: 'deepseek-runtime',
-    deepseek: {
-      binaryPath: '',
-      port: 7878,
-      autoStart: true,
-      apiKey: '',
-      baseUrl: 'https://api.deepseek.com/beta',
-      runtimeToken: '',
-      extraCorsOrigins: [],
-      approvalPolicy: 'auto',
-      sandboxMode: 'workspace-write'
+    agentProvider: 'codewhale',
+    agents: {
+      codewhale: {
+        binaryPath: '',
+        port: 7878,
+        autoStart: true,
+        apiKey: '',
+        baseUrl: 'https://api.deepseek.com/beta',
+        runtimeToken: '',
+        extraCorsOrigins: [],
+        approvalPolicy: 'auto',
+        sandboxMode: 'workspace-write'
+      }
     },
     workspaceRoot: '/tmp/workspace',
     log: {

@@ -1,4 +1,8 @@
-import { DEFAULT_DEEPSEEK_BASE_URL, type AppSettingsV1 } from '../shared/app-settings'
+import {
+  DEFAULT_DEEPSEEK_BASE_URL,
+  getActiveAgentRuntimeSettings,
+  type AppSettingsV1
+} from '../shared/app-settings'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '../shared/default-composer-models'
 import { upstreamOpenAiModelsUrl } from '../shared/openai-compat-url'
 
@@ -20,7 +24,9 @@ export async function fetchUpstreamModelIds(
   if (!key) {
     return { ok: false, message: 'Missing API key; cannot query upstream /v1/models.' }
   }
-  const url = upstreamOpenAiModelsUrl(settings.deepseek.baseUrl || DEFAULT_DEEPSEEK_BASE_URL)
+  const url = upstreamOpenAiModelsUrl(
+    getActiveAgentRuntimeSettings(settings).baseUrl || DEFAULT_DEEPSEEK_BASE_URL
+  )
   try {
     const res = await fetch(url, {
       method: 'GET',

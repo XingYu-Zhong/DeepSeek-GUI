@@ -74,7 +74,27 @@ describe('JsonSettingsStore', () => {
     const store = new JsonSettingsStore(userDataDir)
     const loaded = await store.load()
 
-    expect(loaded.deepseek.autoStart).toBe(false)
+    expect(loaded.agents.codewhale.autoStart).toBe(false)
+  })
+
+  it('migrates legacy deepseek-runtime agentProvider to codewhale', async () => {
+    const userDataDir = await mkdtemp(join(tmpdir(), 'ds-gui-settings-'))
+
+    await writeFile(
+      join(userDataDir, 'deepseek-gui-settings.json'),
+      JSON.stringify({
+        version: 1,
+        agentProvider: 'deepseek-runtime',
+        deepseek: { port: 8787 }
+      }),
+      'utf8'
+    )
+
+    const store = new JsonSettingsStore(userDataDir)
+    const loaded = await store.load()
+
+    expect(loaded.agentProvider).toBe('codewhale')
+    expect(loaded.agents.codewhale.port).toBe(8787)
   })
 
   it('backs up invalid JSON and replaces it with defaults', async () => {

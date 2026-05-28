@@ -32,6 +32,7 @@ import { workspaceLabelFromPath } from '../lib/workspace-label'
 import { isClawWorkspacePath, isInternalTemporaryWorkspace, normalizeWorkspaceRoot } from '../lib/workspace-path'
 import {
   buildClawRuntimePrompt,
+  getActiveAgentRuntimeSettings,
   type ClawImChannelV1
 } from '@shared/app-settings'
 import type {
@@ -766,7 +767,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   settingsSection: 'general',
   initialSetupOpen: false,
   initialSetupMode: 'required',
-  providerId: 'deepseek-runtime',
+  providerId: 'codewhale',
   workspaceRoot: '',
   workspaceLabel: i18n.t('common:workingDirectory'),
   runtimeConnection: 'idle',
@@ -1072,7 +1073,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         const settings = await window.dsGui.getSettings()
         const workspaceRoot = normalizeWorkspaceRoot(settings.workspaceRoot)
-        const needsInitialSetup = !settings.deepseek.apiKey.trim()
+        const needsInitialSetup = !getActiveAgentRuntimeSettings(settings).apiKey.trim()
         applyTheme(settings.theme)
         applyUiFontScale(settings.uiFontScale)
         await get().applyI18nFromSettings(settings.locale)

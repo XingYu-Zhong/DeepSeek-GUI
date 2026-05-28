@@ -4,6 +4,18 @@ import {
   type GuiUpdateChannel
 } from './gui-update'
 export { DEFAULT_GUI_UPDATE_CHANNEL, normalizeGuiUpdateChannel, type GuiUpdateChannel } from './gui-update'
+import { normalizeAgentProviderId, type AgentProviderId } from './agent-catalog'
+export {
+  AGENT_CATALOG,
+  defaultAgentProviderId,
+  getAgentDefinition,
+  isKnownAgentProviderId,
+  listAgents,
+  normalizeAgentProviderId,
+  type AgentProviderDefinition,
+  type AgentProviderId,
+  type LocalHttpRuntimeCapabilities
+} from './agent-catalog'
 
 export type ApprovalPolicy = 'on-request' | 'untrusted' | 'never' | 'auto' | 'suggest'
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access' | 'external-sandbox'
@@ -28,7 +40,7 @@ export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_DEBOUNCE_MS = 2_800
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MIN_ACCEPT_SCORE = 0.36
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS = 256
 
-export type DeepseekSettingsV1 = {
+export type LocalHttpRuntimeSettingsV1 = {
   binaryPath: string
   port: number
   autoStart: boolean
@@ -36,10 +48,17 @@ export type DeepseekSettingsV1 = {
   baseUrl: string
   runtimeToken: string
   extraCorsOrigins: string[]
-  /** Forwarded as `--approval-policy` to `deepseek serve`. */
+  /** Forwarded as `--approval-policy` to `codewhale serve`. */
   approvalPolicy: ApprovalPolicy
-  /** Forwarded as `--sandbox-mode` to `deepseek serve`. */
+  /** Forwarded as `--sandbox-mode` to `codewhale serve`. */
   sandboxMode: SandboxMode
+}
+
+/** @deprecated Use LocalHttpRuntimeSettingsV1 */
+export type DeepseekSettingsV1 = LocalHttpRuntimeSettingsV1
+
+export type AgentRuntimeSettingsMapV1 = {
+  codewhale: LocalHttpRuntimeSettingsV1
 }
 
 export type LogConfigV1 = {
@@ -213,8 +232,8 @@ export type AppSettingsV1 = {
   locale: 'en' | 'zh'
   theme: 'system' | 'light' | 'dark'
   uiFontScale: UiFontScale
-  agentProvider: 'deepseek-runtime'
-  deepseek: DeepseekSettingsV1
+  agentProvider: AgentProviderId
+  agents: AgentRuntimeSettingsMapV1
   workspaceRoot: string
   log: LogConfigV1
   notifications: NotificationConfigV1
@@ -224,14 +243,58 @@ export type AppSettingsV1 = {
 }
 
 export type AppSettingsPatch = Partial<
-  Omit<AppSettingsV1, 'deepseek' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>
+  Omit<AppSettingsV1, 'agents' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>
 > & {
-  deepseek?: Partial<DeepseekSettingsV1>
+  agents?: {
+    codewhale?: Partial<LocalHttpRuntimeSettingsV1>
+  }
   log?: Partial<LogConfigV1>
   notifications?: Partial<NotificationConfigV1>
   write?: WriteSettingsPatchV1
   claw?: ClawSettingsPatchV1
   guiUpdate?: Partial<GuiUpdateConfigV1>
+}
+
+export function defaultLocalHttpRuntimeSettings(port = 7878): LocalHttpRuntimeSettingsV1 {
+  return {
+    binaryPath: '',
+    port,
+    autoStart: true,
+    apiKey: '',
+    baseUrl: DEFAULT_DEEPSEEK_BASE_URL,
+    runtimeToken: '',
+    extraCorsOrigins: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    approvalPolicy: 'auto',
+    sandboxMode: 'workspace-write'
+  }
+}
+
+export function getActiveAgentRuntimeSettings(settings: AppSettingsV1): LocalHttpRuntimeSettingsV1 {
+  return settings.agents[settings.agentProvider]
+}
+
+type LegacyAppSettingsShape = Partial<AppSettingsV1> & {
+  deepseek?: Partial<LocalHttpRuntimeSettingsV1>
+  agentProvider?: unknown
+}
+
+export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partial<AppSettingsV1> {
+  const agentProvider = normalizeAgentProviderId(parsed.agentProvider)
+  const defaults = defaultLocalHttpRuntimeSettings()
+  const legacyDeepseek = parsed.deepseek ?? {}
+  const codewhale = {
+    ...defaults,
+    ...(parsed.agents?.codewhale ?? {}),
+    ...legacyDeepseek
+  }
+  const { deepseek: _legacyDeepseek, agents: _agents, ...rest } = parsed
+  return {
+    ...rest,
+    agentProvider,
+    agents: {
+      codewhale
+    }
+  }
 }
 
 export const CLAW_CURRENT_USER_REQUEST_HEADING = '[Current user request]'
@@ -721,9 +784,12 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
   }
   return {
     ...settings,
-    deepseek: {
-      ...settings.deepseek,
-      baseUrl: normalizeDeepseekBaseUrl(settings.deepseek.baseUrl)
+    agentProvider: normalizeAgentProviderId(settings.agentProvider),
+    agents: {
+      codewhale: {
+        ...settings.agents.codewhale,
+        baseUrl: normalizeDeepseekBaseUrl(settings.agents.codewhale.baseUrl)
+      }
     },
     notifications: {
       turnComplete: maybeSettings.notifications?.turnComplete !== false

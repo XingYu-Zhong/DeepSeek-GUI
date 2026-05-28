@@ -4,7 +4,14 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
-import type { AppSettingsPatch, AppSettingsV1, ClawRunResult, ClawTaskFromTextResult, ClawRuntimeStatus } from '../../shared/app-settings'
+import {
+  getActiveAgentRuntimeSettings,
+  type AppSettingsPatch,
+  type AppSettingsV1,
+  type ClawRunResult,
+  type ClawTaskFromTextResult,
+  type ClawRuntimeStatus
+} from '../../shared/app-settings'
 import type { DeepseekUpdateInfo, DeepseekUpdateInstallResult } from '../../shared/deepseek-update'
 import type {
   ClawImInstallPollResult,
@@ -209,15 +216,16 @@ async function diagnoseDeepseekRuntime(
 
   const configIssues = detectTomlConfigIssues(configPath, configContent)
   const binary = await options.prepareDeepseekBinary()
-  const baseUrl = getRuntimeBaseUrl(settings.deepseek.port)
-  const portOwner = await findListeningProcessOnPort(settings.deepseek.port)
+  const runtime = getActiveAgentRuntimeSettings(settings)
+  const baseUrl = getRuntimeBaseUrl(runtime.port)
+  const portOwner = await findListeningProcessOnPort(runtime.port)
   const health = await probeRuntimeEndpoint(`${baseUrl}/health`)
   const threadApi = health.ok
     ? await probeRuntimeEndpoint(`${baseUrl}/v1/threads?limit=1`)
     : null
   const issues: DeepseekRuntimeDiagnosticIssue[] = [...configIssues]
 
-  if (!settings.deepseek.apiKey.trim() && !process.env.DEEPSEEK_API_KEY?.trim()) {
+  if (!runtime.apiKey.trim() && !process.env.DEEPSEEK_API_KEY?.trim()) {
     issues.push({
       severity: 'error',
       code: 'missing_api_key',
@@ -226,12 +234,12 @@ async function diagnoseDeepseekRuntime(
     })
   }
 
-  if (!settings.deepseek.autoStart) {
+  if (!runtime.autoStart) {
     issues.push({
       severity: 'warning',
       code: 'auto_start_disabled',
       title: 'Automatic runtime startup is disabled',
-      message: 'Enable auto-start or run `deepseek serve --http` manually before retrying the connection.'
+      message: 'Enable auto-start or run `codewhale serve --http` manually before retrying the connection.'
     })
   }
 
@@ -239,14 +247,14 @@ async function diagnoseDeepseekRuntime(
     issues.push({
       severity: 'error',
       code: 'binary_unavailable',
-      title: 'deepseek CLI is unavailable',
+      title: 'CodeWhale CLI is unavailable',
       message: binary.message
     })
   }
 
   if (!portOwner) {
     issues.push({
-      severity: settings.deepseek.autoStart ? 'info' : 'warning',
+      severity: runtime.autoStart ? 'info' : 'warning',
       code: 'runtime_not_listening',
       title: 'No runtime is listening on the configured port',
       message: `Nothing is listening on ${baseUrl}. Retry will ask the GUI to start the managed runtime.`
@@ -256,7 +264,7 @@ async function diagnoseDeepseekRuntime(
       severity: 'warning',
       code: 'port_owned_by_other_process',
       title: 'Configured port is owned by another process',
-      message: `Port ${settings.deepseek.port} is currently owned by PID ${portOwner.pid}: ${portOwner.command}`
+      message: `Port ${runtime.port} is currently owned by PID ${portOwner.pid}: ${portOwner.command}`
     })
   }
 
@@ -272,14 +280,14 @@ async function diagnoseDeepseekRuntime(
   return {
     checkedAt: new Date().toISOString(),
     settings: {
-      port: settings.deepseek.port,
-      autoStart: settings.deepseek.autoStart,
-      binaryPath: settings.deepseek.binaryPath,
-      baseUrl: settings.deepseek.baseUrl,
-      approvalPolicy: settings.deepseek.approvalPolicy,
-      sandboxMode: settings.deepseek.sandboxMode,
-      hasApiKey: Boolean(settings.deepseek.apiKey.trim() || process.env.DEEPSEEK_API_KEY?.trim()),
-      hasRuntimeToken: Boolean(settings.deepseek.runtimeToken.trim())
+      port: runtime.port,
+      autoStart: runtime.autoStart,
+      binaryPath: runtime.binaryPath,
+      baseUrl: runtime.baseUrl,
+      approvalPolicy: runtime.approvalPolicy,
+      sandboxMode: runtime.sandboxMode,
+      hasApiKey: Boolean(runtime.apiKey.trim() || process.env.DEEPSEEK_API_KEY?.trim()),
+      hasRuntimeToken: Boolean(runtime.runtimeToken.trim())
     },
     binary,
     config: {

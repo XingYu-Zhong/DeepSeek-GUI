@@ -3,6 +3,7 @@ import {
   DEFAULT_WRITE_INLINE_COMPLETION_BASE_URL,
   DEFAULT_WRITE_INLINE_COMPLETION_MAX_TOKENS,
   DEFAULT_WRITE_INLINE_COMPLETION_MODEL,
+  getActiveAgentRuntimeSettings,
   normalizeWriteInlineCompletionModel,
   type AppSettingsV1
 } from '../../shared/app-settings'
@@ -541,7 +542,7 @@ export async function requestWriteInlineCompletion(
     return { ok: false, message: 'Inline completion is disabled.' }
   }
 
-  const apiKey = settings.deepseek.apiKey.trim()
+  const apiKey = getActiveAgentRuntimeSettings(settings).apiKey.trim()
   if (!apiKey) {
     appendInlineCompletionPreflightFailure(startedAt, settings, request, 'Missing API key for inline completion.')
     return { ok: false, message: 'Missing API key for inline completion.' }

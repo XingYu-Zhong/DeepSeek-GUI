@@ -145,7 +145,7 @@ export function RuntimeDiagnosticsDialog({
         return false
       }
       if (dirtySettings) {
-        const deepseekPatch: {
+        const runtimePatch: {
           autoStart: boolean
           port: number
           baseUrl: string
@@ -158,10 +158,10 @@ export function RuntimeDiagnosticsDialog({
           binaryPath: settingsDraft.binaryPath
         }
         if (settingsDraft.apiKey.trim()) {
-          deepseekPatch.apiKey = settingsDraft.apiKey.trim()
+          runtimePatch.apiKey = settingsDraft.apiKey.trim()
         }
         await window.dsGui.setSettings({
-          deepseek: deepseekPatch
+          agents: { codewhale: runtimePatch }
         })
       }
       if (dirtyConfig) {

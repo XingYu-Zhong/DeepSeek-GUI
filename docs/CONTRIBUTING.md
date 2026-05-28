@@ -180,7 +180,7 @@ When reporting issues, please include:
 
 - Operating system and version
 - DeepSeek GUI version (from Settings or the About dialog)
-- Bundled `deepseek-tui` version (`deepseek --version` in the same directory)
+- Bundled `codewhale` version (`codewhale --version` in the same directory)
 - Steps to reproduce the issue
 - Expected vs actual behavior
 - Relevant error messages, logs, or screenshots

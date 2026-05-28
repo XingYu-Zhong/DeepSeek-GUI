@@ -1,7 +1,7 @@
 {
   "name": "deepseek-gui",
   "version": "0.1.0",
-  "description": "Electron workbench for the DeepSeek-TUI runtime (HTTP/SSE)",
+  "description": "Electron workbench for the CodeWhale runtime (HTTP/SSE)",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {

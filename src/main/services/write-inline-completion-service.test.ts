@@ -24,17 +24,19 @@ function createSettings(patch: Partial<AppSettingsV1['write']['inlineCompletion'
     locale: 'en',
     theme: 'system',
     uiFontScale: 'small',
-    agentProvider: 'deepseek-runtime',
-    deepseek: {
-      binaryPath: '',
-      port: 7878,
-      autoStart: true,
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.deepseek.com/beta',
-      runtimeToken: '',
-      extraCorsOrigins: [],
-      approvalPolicy: 'auto',
-      sandboxMode: 'workspace-write'
+    agentProvider: 'codewhale',
+    agents: {
+      codewhale: {
+        binaryPath: '',
+        port: 7878,
+        autoStart: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.deepseek.com/beta',
+        runtimeToken: '',
+        extraCorsOrigins: [],
+        approvalPolicy: 'auto',
+        sandboxMode: 'workspace-write'
+      }
     },
     workspaceRoot: '/tmp/workspace',
     log: {
@@ -180,7 +182,7 @@ describe('requestWriteInlineCompletion', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const settings = createSettings()
-    settings.deepseek.apiKey = ''
+    settings.agents.codewhale.apiKey = ''
 
     const result = await requestWriteInlineCompletion(settings, createRequest())
 

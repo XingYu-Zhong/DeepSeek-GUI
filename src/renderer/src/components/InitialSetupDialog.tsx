@@ -6,8 +6,8 @@ import { useChatStore } from '../store/chat-store'
 import { Eye, EyeOff, ExternalLink, Sparkles, Sun, Moon, Monitor, X } from 'lucide-react'
 
 type ThemePref = AppSettingsV1['theme']
-type SetupFormPatch = Partial<Omit<AppSettingsV1, 'deepseek'>> & {
-  deepseek?: Partial<AppSettingsV1['deepseek']>
+type SetupFormPatch = Partial<Omit<AppSettingsV1, 'agents'>> & {
+  agents?: { codewhale?: Partial<AppSettingsV1['agents']['codewhale']> }
 }
 
 const themeOptions: { value: ThemePref; icon: typeof Sun; labelKey: string }[] = [
@@ -45,7 +45,9 @@ export function InitialSetupDialog(): ReactElement {
     const next: AppSettingsV1 = {
       ...form,
       ...patch,
-      deepseek: { ...form.deepseek, ...(patch.deepseek ?? {}) }
+      agents: {
+        codewhale: { ...form.agents.codewhale, ...(patch.agents?.codewhale ?? {}) }
+      }
     }
     setForm(next)
   }
@@ -69,7 +71,7 @@ export function InitialSetupDialog(): ReactElement {
 
   const handleSave = async () => {
     if (!form) return
-    if (!form.deepseek.apiKey.trim()) {
+    if (!form.agents.codewhale.apiKey.trim()) {
       setError(t('firstRunApiKeyValidation'))
       return
     }
@@ -195,8 +197,8 @@ export function InitialSetupDialog(): ReactElement {
             <div className="relative">
               <input
                 type={showApiKey ? 'text' : 'password'}
-                value={form.deepseek.apiKey}
-                onChange={(e) => updateForm({ deepseek: { apiKey: e.target.value } })}
+                value={form.agents.codewhale.apiKey}
+                onChange={(e) => updateForm({ agents: { codewhale: { apiKey: e.target.value } } })}
                 placeholder="sk-..."
                 className={`${fieldClass} pr-12 font-mono tracking-[0.02em] placeholder:font-sans`}
               />
@@ -229,8 +231,8 @@ export function InitialSetupDialog(): ReactElement {
             </label>
             <input
               type="text"
-              value={form.deepseek.baseUrl}
-              onChange={(e) => updateForm({ deepseek: { baseUrl: e.target.value } })}
+              value={form.agents.codewhale.baseUrl}
+              onChange={(e) => updateForm({ agents: { codewhale: { baseUrl: e.target.value } } })}
               placeholder="https://api.deepseek.com/beta"
               className={fieldClass}
             />

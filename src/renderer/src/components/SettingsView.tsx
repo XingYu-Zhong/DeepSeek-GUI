@@ -11,6 +11,8 @@ import {
   DEFAULT_GUI_UPDATE_CHANNEL,
   DEFAULT_WRITE_WORKSPACE_ROOT,
   DEFAULT_CLAW_MODEL,
+  getActiveAgentRuntimeSettings,
+  listAgents,
   mergeClawSettings,
   mergeWriteSettings,
   normalizeClawSettings,
@@ -64,8 +66,8 @@ import { useChatStore, type SettingsRouteSection } from '../store/chat-store'
 
 type SettingsCategory = 'general' | 'write' | 'agents' | 'claw'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
-type SettingsPatch = Partial<Omit<AppSettingsV1, 'deepseek' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>> & {
-  deepseek?: Partial<AppSettingsV1['deepseek']>
+type SettingsPatch = Partial<Omit<AppSettingsV1, 'agents' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>> & {
+  agents?: { codewhale?: Partial<AppSettingsV1['agents']['codewhale']> }
   log?: Partial<AppSettingsV1['log']>
   notifications?: Partial<AppSettingsV1['notifications']>
   write?: WriteSettingsPatchV1
@@ -82,8 +84,8 @@ type InlineNotice = {
   tone: 'success' | 'error' | 'info'
   message: string
 }
-type RendererSettingsShape = Partial<Omit<AppSettingsV1, 'deepseek' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>> & {
-  deepseek?: Partial<AppSettingsV1['deepseek']>
+type RendererSettingsShape = Partial<Omit<AppSettingsV1, 'agents' | 'log' | 'notifications' | 'write' | 'claw' | 'guiUpdate'>> & {
+  agents?: { codewhale?: Partial<AppSettingsV1['agents']['codewhale']> }
   log?: Partial<AppSettingsV1['log']>
   notifications?: Partial<AppSettingsV1['notifications']>
   write?: WriteSettingsPatchV1
@@ -153,7 +155,7 @@ function clawScheduleSummary(
 }
 
 function hasValidPort(settings: AppSettingsV1): boolean {
-  const port = settings.deepseek.port
+  const port = getActiveAgentRuntimeSettings(settings).port
   return Number.isFinite(port) && port >= 1 && port <= 65535
 }
 
@@ -198,10 +200,13 @@ function mergeSettings(current: AppSettingsV1, patch: SettingsPatch): AppSetting
   return {
     ...safeCurrent,
     ...patch,
-    deepseek: {
-      ...safeCurrent.deepseek,
-      ...(patch.deepseek ?? {})
+    agents: {
+      codewhale: {
+        ...safeCurrent.agents.codewhale,
+        ...(patch.agents?.codewhale ?? {})
+      }
     },
+    agentProvider: patch.agentProvider ?? safeCurrent.agentProvider,
     log: {
       ...safeCurrent.log,
       ...(patch.log ?? {})
@@ -329,8 +334,9 @@ export function SettingsView(): ReactElement {
   const formTheme = form?.theme
   const formUiFontScale = form?.uiFontScale
   const formWorkspaceRoot = form?.workspaceRoot
-  const formPort = form?.deepseek?.port
-  const formDeepseekBinaryPath = form?.deepseek?.binaryPath ?? ''
+  const formPort = form?.agents.codewhale?.port
+  const formCodewhaleBinaryPath = form?.agents.codewhale?.binaryPath ?? ''
+  const agentOptions = useMemo(() => listAgents(), [])
   const formGuiUpdateChannel = form?.guiUpdate?.channel
 
   useEffect(() => {
@@ -391,7 +397,7 @@ export function SettingsView(): ReactElement {
   useEffect(() => {
     if (!form || initializedCategory.current) return
     initializedCategory.current = true
-    if (!form.deepseek.apiKey?.trim()) {
+    if (!form.agents.codewhale.apiKey?.trim()) {
       setCategory('agents')
     }
   }, [form])
@@ -442,10 +448,10 @@ export function SettingsView(): ReactElement {
   }, [])
 
   const portError = useMemo(() => {
-    if (typeof formPort !== 'number') return null
-    if (!hasValidPort({ deepseek: { port: formPort } } as AppSettingsV1)) return t('portInvalid')
+    if (!form || typeof formPort !== 'number') return null
+    if (!hasValidPort(form)) return t('portInvalid')
     return null
-  }, [formPort, t])
+  }, [form, formPort, t])
 
   const skillRootOptions = useMemo<SkillRootOption[]>(() => {
     const workspaceRoot = normalizeWorkspaceRoot(formWorkspaceRoot)
@@ -822,11 +828,11 @@ export function SettingsView(): ReactElement {
 
   useEffect(() => {
     if (!form || category !== 'agents') return
-    const key = formDeepseekBinaryPath.trim() || '<managed>'
+    const key = formCodewhaleBinaryPath.trim() || '<managed>'
     if (checkedRuntimeUpdateKey.current === key) return
     checkedRuntimeUpdateKey.current = key
     void checkRuntimeUpdate()
-  }, [category, checkRuntimeUpdate, form, formDeepseekBinaryPath])
+  }, [category, checkRuntimeUpdate, form, formCodewhaleBinaryPath])
 
   useEffect(() => {
     if (!form || category !== 'general') return
@@ -861,7 +867,7 @@ export function SettingsView(): ReactElement {
     )
   }
 
-  const corsValue = (form.deepseek.extraCorsOrigins ?? []).join(', ')
+  const corsValue = (form.agents.codewhale.extraCorsOrigins ?? []).join(', ')
 
   const update = (partial: SettingsPatch): void => {
     const next = mergeSettings(form, partial)
@@ -1079,7 +1085,7 @@ export function SettingsView(): ReactElement {
 
       <div className="ds-no-drag min-h-0 min-w-0 flex-1 overflow-y-auto px-10 py-10">
         <div className="mx-auto max-w-3xl">
-          {!form.deepseek.apiKey.trim() ? (
+          {!form.agents.codewhale.apiKey.trim() ? (
             <div className="mb-6 rounded-2xl border border-amber-300/80 bg-amber-50/95 px-5 py-4 text-amber-950 shadow-sm dark:border-amber-700/60 dark:bg-amber-950/35 dark:text-amber-100">
               <div className="text-[15px] font-semibold">{t('apiKeyRequiredTitle')}</div>
               <p className="mt-1 text-[13px] leading-6 text-amber-900/90 dark:text-amber-100/90">
@@ -1392,13 +1398,13 @@ export function SettingsView(): ReactElement {
                   description={t('writeApiKeyDesc')}
                   control={
                     <SecretInput
-                      value={form.deepseek.apiKey}
-                      onChange={(value) => update({ deepseek: { apiKey: value } })}
+                      value={form.agents.codewhale.apiKey}
+                      onChange={(value) => update({ agents: { codewhale: { apiKey: value } } })}
                       visible={showApiKey}
                       onToggleVisibility={() => setShowApiKey((value) => !value)}
                       placeholder="sk-…"
                       autoComplete="off"
-                      invalid={!form.deepseek.apiKey.trim()}
+                      invalid={!form.agents.codewhale.apiKey.trim()}
                       showLabel={t('showSecret')}
                       hideLabel={t('hideSecret')}
                       className="md:max-w-md"
@@ -1581,6 +1587,30 @@ export function SettingsView(): ReactElement {
 
           {category === 'agents' && (
             <>
+              <SettingsCard title={t('agentProviderTitle')} className="mb-6">
+                <SettingRow
+                  title={t('agentProviderLabel')}
+                  description={t('agentProviderDesc')}
+                  control={
+                    <select
+                      className={selectControlClass}
+                      value={form.agentProvider}
+                      onChange={(e) =>
+                        update({
+                          agentProvider: e.target.value as AppSettingsV1['agentProvider']
+                        })
+                      }
+                    >
+                      {agentOptions.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  }
+                />
+              </SettingsCard>
+
               <div className="mb-6 flex flex-wrap gap-2">
                 <SectionJumpButton label={t('agentsQuickBase')} onClick={() => scrollToAgentSection('agents')} />
                 <SectionJumpButton label={t('agentsQuickSkill')} onClick={() => scrollToAgentSection('skill')} />
@@ -1609,13 +1639,13 @@ export function SettingsView(): ReactElement {
                     description={t('apiKeyDesc')}
                     control={
                       <SecretInput
-                        value={form.deepseek.apiKey}
-                        onChange={(value) => update({ deepseek: { apiKey: value } })}
+                        value={form.agents.codewhale.apiKey}
+                        onChange={(value) => update({ agents: { codewhale: { apiKey: value } } })}
                         visible={showApiKey}
                         onToggleVisibility={() => setShowApiKey((value) => !value)}
                         placeholder="sk-…"
                         autoComplete="off"
-                        invalid={!form.deepseek.apiKey.trim()}
+                        invalid={!form.agents.codewhale.apiKey.trim()}
                         showLabel={t('showSecret')}
                         hideLabel={t('hideSecret')}
                         className="md:max-w-md"
@@ -1629,8 +1659,8 @@ export function SettingsView(): ReactElement {
                       <input
                         className="w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30 md:max-w-md"
                         placeholder={t('baseUrlPlaceholder')}
-                        value={form.deepseek.baseUrl}
-                        onChange={(e) => update({ deepseek: { baseUrl: e.target.value } })}
+                        value={form.agents.codewhale.baseUrl}
+                        onChange={(e) => update({ agents: { codewhale: { baseUrl: e.target.value } } })}
                       />
                     }
                   />
@@ -1639,8 +1669,8 @@ export function SettingsView(): ReactElement {
                     description={t('autoStartDesc')}
                     control={
                       <Toggle
-                        checked={form.deepseek.autoStart}
-                        onChange={(v) => update({ deepseek: { autoStart: v } })}
+                        checked={form.agents.codewhale.autoStart}
+                        onChange={(v) => update({ agents: { codewhale: { autoStart: v } } })}
                       />
                     }
                   />
@@ -1658,8 +1688,8 @@ export function SettingsView(): ReactElement {
                               ? 'border-red-400 focus:ring-red-300'
                               : 'border-ds-border focus:border-accent/40 focus:ring-accent/30'
                           }`}
-                          value={form.deepseek.port}
-                          onChange={(e) => update({ deepseek: { port: Number(e.target.value) } })}
+                          value={form.agents.codewhale.port}
+                          onChange={(e) => update({ agents: { codewhale: { port: Number(e.target.value) } } })}
                         />
                         {portError ? (
                           <p className="mt-1 text-[12px] text-red-700 dark:text-red-300">{portError}</p>
@@ -1674,8 +1704,8 @@ export function SettingsView(): ReactElement {
                       <input
                         className="w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30 md:max-w-md"
                         placeholder={t('deepseekBinaryPlaceholder')}
-                        value={form.deepseek.binaryPath}
-                        onChange={(e) => update({ deepseek: { binaryPath: e.target.value } })}
+                        value={form.agents.codewhale.binaryPath}
+                        onChange={(e) => update({ agents: { codewhale: { binaryPath: e.target.value } } })}
                       />
                     }
                   />
@@ -1700,8 +1730,8 @@ export function SettingsView(): ReactElement {
                     description={t('runtimeTokenDesc')}
                     control={
                       <SecretInput
-                        value={form.deepseek.runtimeToken}
-                        onChange={(value) => update({ deepseek: { runtimeToken: value } })}
+                        value={form.agents.codewhale.runtimeToken}
+                        onChange={(value) => update({ agents: { codewhale: { runtimeToken: value } } })}
                         visible={showRuntimeToken}
                         onToggleVisibility={() => setShowRuntimeToken((value) => !value)}
                         showLabel={t('showSecret')}
@@ -1719,11 +1749,13 @@ export function SettingsView(): ReactElement {
                         value={corsValue}
                         onChange={(e) =>
                           update({
-                            deepseek: {
-                              extraCorsOrigins: e.target.value
-                                .split(',')
-                                .map((s) => s.trim())
-                                .filter(Boolean)
+                            agents: {
+                              codewhale: {
+                                extraCorsOrigins: e.target.value
+                                  .split(',')
+                                  .map((s) => s.trim())
+                                  .filter(Boolean)
+                              }
                             }
                           })
                         }
@@ -1899,11 +1931,13 @@ export function SettingsView(): ReactElement {
                     control={
                       <select
                         className={selectControlClass}
-                        value={form.deepseek.approvalPolicy}
+                        value={form.agents.codewhale.approvalPolicy}
                         onChange={(e) =>
                           update({
-                            deepseek: {
-                              approvalPolicy: e.target.value as ApprovalPolicy
+                            agents: {
+                              codewhale: {
+                                approvalPolicy: e.target.value as ApprovalPolicy
+                              }
                             }
                           })
                         }
@@ -1922,11 +1956,13 @@ export function SettingsView(): ReactElement {
                     control={
                       <select
                         className={selectControlClass}
-                        value={form.deepseek.sandboxMode}
+                        value={form.agents.codewhale.sandboxMode}
                         onChange={(e) =>
                           update({
-                            deepseek: {
-                              sandboxMode: e.target.value as SandboxMode
+                            agents: {
+                              codewhale: {
+                                sandboxMode: e.target.value as SandboxMode
+                              }
                             }
                           })
                         }

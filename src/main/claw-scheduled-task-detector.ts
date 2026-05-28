@@ -1,5 +1,5 @@
 import type { AppSettingsV1, ClawRunMode, ClawTaskV1 } from '../shared/app-settings'
-import { DEFAULT_CLAW_MODEL } from '../shared/app-settings'
+import { DEFAULT_CLAW_MODEL, getActiveAgentRuntimeSettings } from '../shared/app-settings'
 
 const SCHEDULED_TASK_CANDIDATE_RE =
   /(?:提醒|定时|闹钟|通知|叫我|叫醒|稍后|之后|到点|分钟后|小时后|秒后|天后|明天|后天|今晚|later|remind|reminder|alarm|timer|schedule|scheduled|tomorrow|tonight|in\s+\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?))/iu
@@ -172,9 +172,10 @@ export async function detectClawScheduledTaskRequest(
   now = new Date()
 ): Promise<ParsedClawScheduledTaskRequest | null> {
   if (!looksLikeClawScheduledTaskCandidate(sourceText)) return null
-  const apiKey = settings.deepseek.apiKey.trim()
+  const runtime = getActiveAgentRuntimeSettings(settings)
+  const apiKey = runtime.apiKey.trim()
   if (!apiKey) return null
-  const response = await fetch(buildChatCompletionsUrl(settings.deepseek.baseUrl), {
+  const response = await fetch(buildChatCompletionsUrl(runtime.baseUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

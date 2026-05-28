@@ -20,7 +20,12 @@ import type {
   ClawTaskFromTextResult,
   ClawTaskV1
 } from '../shared/app-settings'
-import { DEFAULT_CLAW_MODEL, buildClawRuntimePrompt, CLAW_FEISHU_INBOUND_MESSAGE_HEADING } from '../shared/app-settings'
+import {
+  DEFAULT_CLAW_MODEL,
+  buildClawRuntimePrompt,
+  CLAW_FEISHU_INBOUND_MESSAGE_HEADING,
+  getActiveAgentRuntimeSettings
+} from '../shared/app-settings'
 import {
   buildClawTaskFromDetectedRequest,
   detectClawScheduledTaskRequest
@@ -133,9 +138,10 @@ function clawConversationKey(chatId: string, remoteThreadId: string): string {
 }
 
 function runtimeExecutionFlags(settings: AppSettingsV1): { auto_approve: boolean; trust_mode: boolean } {
+  const runtime = getActiveAgentRuntimeSettings(settings)
   return {
-    auto_approve: settings.deepseek.approvalPolicy === 'auto',
-    trust_mode: settings.deepseek.sandboxMode === 'danger-full-access'
+    auto_approve: runtime.approvalPolicy === 'auto',
+    trust_mode: runtime.sandboxMode === 'danger-full-access'
   }
 }
 
@@ -828,7 +834,7 @@ export class ClawRuntime {
       if (turnDone && lastText) return lastText
     }
     if (lastText) return lastText
-    throw new Error('Timed out waiting for DeepSeek-TUI response.')
+    throw new Error('Timed out waiting for CodeWhale response.')
   }
 
   private resolveChannelWorkspaceRoot(settings: AppSettingsV1, channel?: ClawImChannelV1): string {

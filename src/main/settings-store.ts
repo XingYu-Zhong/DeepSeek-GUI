@@ -6,9 +6,12 @@ import {
   DEFAULT_GUI_UPDATE_CHANNEL,
   DEFAULT_WRITE_WORKSPACE_ROOT,
   defaultClawSettings,
+  defaultLocalHttpRuntimeSettings,
   defaultWriteSettings,
   mergeClawSettings,
   mergeWriteSettings,
+  migrateLegacyAppSettings,
+  normalizeAgentProviderId,
   normalizeAppSettings,
   type AppSettingsPatch,
   type AppSettingsV1,
@@ -156,20 +159,9 @@ const defaultSettings = (): AppSettingsV1 => ({
   locale: 'en',
   theme: 'system',
   uiFontScale: 'small',
-  agentProvider: 'deepseek-runtime',
-  deepseek: {
-    binaryPath: '',
-    port: 7878,
-    autoStart: true,
-    apiKey: '',
-    baseUrl: DEFAULT_DEEPSEEK_BASE_URL,
-    runtimeToken: '',
-    extraCorsOrigins: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-    // `serve --http` defaults to prompting for write tools, but the GUI has no
-    // native terminal prompt. Default to auto so GUI turns can send the runtime
-    // `auto_approve: true`; users can tighten this from Settings if needed.
-    approvalPolicy: 'auto',
-    sandboxMode: 'workspace-write'
+  agentProvider: 'codewhale',
+  agents: {
+    codewhale: defaultLocalHttpRuntimeSettings()
   },
   workspaceRoot: DEFAULT_WORKSPACE_ROOT,
   log: {
@@ -187,17 +179,23 @@ const defaultSettings = (): AppSettingsV1 => ({
 })
 
 function buildMergedSettings(parsed: Partial<AppSettingsV1>): AppSettingsV1 {
+  const migrated = migrateLegacyAppSettings(parsed)
   const defaults = defaultSettings()
   return {
     ...defaults,
-    ...parsed,
-    deepseek: { ...defaults.deepseek, ...parsed.deepseek },
-    log: { ...defaults.log, ...parsed.log },
-    notifications: { ...defaults.notifications, ...parsed.notifications },
-    write: mergeWriteSettings(defaults.write, parsed.write),
-    claw: mergeClawSettings(defaults.claw, parsed.claw),
-    guiUpdate: { ...defaults.guiUpdate, ...parsed.guiUpdate },
-    agentProvider: 'deepseek-runtime'
+    ...migrated,
+    agents: {
+      codewhale: {
+        ...defaults.agents.codewhale,
+        ...(migrated.agents?.codewhale ?? {})
+      }
+    },
+    log: { ...defaults.log, ...migrated.log },
+    notifications: { ...defaults.notifications, ...migrated.notifications },
+    write: mergeWriteSettings(defaults.write, migrated.write),
+    claw: mergeClawSettings(defaults.claw, migrated.claw),
+    guiUpdate: { ...defaults.guiUpdate, ...migrated.guiUpdate },
+    agentProvider: normalizeAgentProviderId(migrated.agentProvider ?? defaults.agentProvider)
   }
 }
 
@@ -296,13 +294,18 @@ export class JsonSettingsStore {
     const next = normalizeStoredSettings({
       ...cur,
       ...partial,
-      deepseek: { ...cur.deepseek, ...(partial.deepseek ?? {}) },
+      agents: {
+        codewhale: {
+          ...cur.agents.codewhale,
+          ...(partial.agents?.codewhale ?? {})
+        }
+      },
       log: { ...cur.log, ...(partial.log ?? {}) },
       notifications: { ...cur.notifications, ...(partial.notifications ?? {}) },
       write: mergeWriteSettings(cur.write, partial.write),
       claw: mergeClawSettings(cur.claw, partial.claw),
       guiUpdate: { ...cur.guiUpdate, ...(partial.guiUpdate ?? {}) },
-      agentProvider: 'deepseek-runtime'
+      agentProvider: partial.agentProvider ?? cur.agentProvider
     })
     await this.save(next)
     return next

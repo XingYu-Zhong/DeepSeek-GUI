@@ -16,6 +16,7 @@ import {
 } from './deepseek-process'
 import { resolveDeepseekExecutable } from './resolve-deepseek-binary'
 import {
+  getActiveAgentRuntimeSettings,
   mergeClawSettings,
   mergeWriteSettings,
   normalizeAppSettings,
@@ -29,6 +30,7 @@ import {
   checkDeepseekTuiUpdate,
   installDeepseekTuiUpdatePackage
 } from './deepseek-updater'
+import { getActiveRuntimeAdapter } from './runtime/runtime-host'
 import { deepseekTuiConfigChanged, syncDeepseekTuiConfig } from './deepseek-config'
 import { configureLogger, logError, logWarn, pruneOnStartup } from './logger'
 import { createClawRuntime, type ClawRuntime } from './claw-runtime'
@@ -431,7 +433,7 @@ function runtimeFailure(error: string, message: string, status = 0) {
 }
 
 function resolveConfiguredApiKey(settings: AppSettingsV1): string {
-  const fromSettings = settings.deepseek.apiKey?.trim() ?? ''
+  const fromSettings = getActiveAgentRuntimeSettings(settings).apiKey?.trim() ?? ''
   const fromEnv = process.env.DEEPSEEK_API_KEY?.trim() ?? ''
   return fromSettings || fromEnv
 }
@@ -669,9 +671,10 @@ async function probeThreadApi(settings: AppSettingsV1): Promise<
   | { ok: true }
   | { ok: false; error: string; message: string }
 > {
-  const base = getRuntimeBaseUrl(settings.deepseek.port)
+  const runtime = getActiveAgentRuntimeSettings(settings)
+  const base = getRuntimeBaseUrl(runtime.port)
   const headers = new Headers({ Accept: 'application/json' })
-  const runtimeToken = settings.deepseek.runtimeToken?.trim() ?? ''
+  const runtimeToken = runtime.runtimeToken?.trim() ?? ''
   if (runtimeToken) {
     headers.set('Authorization', `Bearer ${runtimeToken}`)
   }
@@ -785,20 +788,21 @@ async function ensureRuntime(settings: AppSettingsV1): Promise<void> {
 async function ensureRuntimeOnce(settings: AppSettingsV1): Promise<void> {
   await waitForQueuedRuntimeSettingsApply()
 
+  const runtime = getActiveAgentRuntimeSettings(settings)
   const hasApiKey = Boolean(resolveConfiguredApiKey(settings))
-  const runtimeToken = settings.deepseek.runtimeToken?.trim() ?? ''
-  const healthy = await waitForRuntimeHealth(settings.deepseek.port, 2000)
+  const runtimeToken = runtime.runtimeToken?.trim() ?? ''
+  const healthy = await waitForRuntimeHealth(runtime.port, 2000)
 
   if (healthy) {
     const threadApi = await probeThreadApi(settings)
     if (threadApi.ok) {
-      if (!isDeepseekChildRunning() && settings.deepseek.autoStart && hasApiKey) {
+      if (!isDeepseekChildRunning() && runtime.autoStart && hasApiKey) {
         const launch = await inspectDeepseekLaunchConfig(settings)
         if (launch.state === 'deepseek' && !launch.matches) {
           console.warn(
-            `[deepseek-gui] restarting runtime on port ${settings.deepseek.port}; launch config mismatch: ${launch.reason}`
+            `[deepseek-gui] restarting runtime on port ${runtime.port}; launch config mismatch: ${launch.reason}`
           )
-          const reclaimed = await reclaimDeepseekPort(settings.deepseek.port)
+          const reclaimed = await reclaimDeepseekPort(runtime.port)
           if (!reclaimed.ok) {
             throw runtimeJsonError('runtime_port_conflict', reclaimed.message)
           }
@@ -814,14 +818,14 @@ async function ensureRuntimeOnce(settings: AppSettingsV1): Promise<void> {
       const canReclaimConflictingRuntime =
         threadApi.error === 'runtime_auth_required' &&
         !runtimeToken &&
-        settings.deepseek.autoStart &&
+        runtime.autoStart &&
         hasApiKey
 
       if (!canReclaimConflictingRuntime) {
         throw runtimeJsonError(threadApi.error, threadApi.message)
       }
 
-      const reclaimed = await reclaimDeepseekPort(settings.deepseek.port)
+      const reclaimed = await reclaimDeepseekPort(runtime.port)
       if (!reclaimed.ok) {
         throw runtimeJsonError('runtime_port_conflict', reclaimed.message)
       }
@@ -833,10 +837,10 @@ async function ensureRuntimeOnce(settings: AppSettingsV1): Promise<void> {
         'DeepSeek API Key is required before the GUI can start the local runtime.'
       )
     }
-    if (!settings.deepseek.autoStart) {
+    if (!runtime.autoStart) {
       throw runtimeJsonError(
         'runtime_offline',
-        'The local runtime is offline. Enable automatic startup in Settings, or start `deepseek serve --http` manually.'
+        'The local runtime is offline. Enable automatic startup in Settings, or start `codewhale serve --http` manually.'
       )
     }
   }
@@ -847,20 +851,21 @@ async function ensureRuntimeOnce(settings: AppSettingsV1): Promise<void> {
       'DeepSeek API Key is required before the GUI can start the local runtime.'
     )
   }
-  if (!settings.deepseek.autoStart) {
+  if (!runtime.autoStart) {
     throw runtimeJsonError(
       'runtime_offline',
-      'The local runtime is offline. Enable automatic startup in Settings, or start `deepseek serve --http` manually.'
+      'The local runtime is offline. Enable automatic startup in Settings, or start `codewhale serve --http` manually.'
     )
   }
-  await syncDeepseekTuiConfig(settings)
+  const adapter = getActiveRuntimeAdapter(settings)
+  await adapter.syncConfig(settings)
   try {
-    await startDeepseekChild(settings)
+    await adapter.ensureRunning(settings)
   } catch (e) {
     console.error('[deepseek-gui] failed to start deepseek:', e)
     throw e
   }
-  const started = await waitForRuntimeHealth(settings.deepseek.port, 20_000)
+  const started = await waitForRuntimeHealth(runtime.port, 20_000)
   if (!started) {
     throw runtimeJsonError(
       'runtime_unhealthy',
@@ -933,8 +938,8 @@ function createWindow(): void {
 }
 
 function deepseekLaunchConfigChanged(prev: AppSettingsV1, next: AppSettingsV1): boolean {
-  const a = prev.deepseek
-  const b = next.deepseek
+  const a = prev.agents.codewhale
+  const b = next.agents.codewhale
   return (
     a.binaryPath !== b.binaryPath ||
     a.port !== b.port ||
@@ -958,24 +963,24 @@ async function restartManagedRuntimeForSettingsChange(
 ): Promise<void> {
   if (!runtimeStartupConfigChanged(prev, next) || !isDeepseekChildRunning()) return
 
-  const samePort = prev.deepseek.port === next.deepseek.port
+  const samePort = prev.agents.codewhale.port === next.agents.codewhale.port
   await stopDeepseekChildAndWait()
 
   if (samePort) {
-    const reclaimed = await reclaimDeepseekPort(prev.deepseek.port)
+    const reclaimed = await reclaimDeepseekPort(prev.agents.codewhale.port)
     if (!reclaimed.ok) {
       console.warn('[deepseek-gui] runtime restart skipped:', reclaimed.message)
       return
     }
   }
 
-  if (!resolveConfiguredApiKey(next) || !next.deepseek.autoStart) {
+  if (!resolveConfiguredApiKey(next) || !next.agents.codewhale.autoStart) {
     return
   }
 
   try {
     await startDeepseekChild(next)
-    const healthy = await waitForRuntimeHealth(next.deepseek.port, 20_000)
+    const healthy = await waitForRuntimeHealth(next.agents.codewhale.port, 20_000)
     if (!healthy) {
       console.warn('[deepseek-gui] runtime restart did not become healthy after settings change')
     }
@@ -991,7 +996,8 @@ async function runtimeRequest(
 ): Promise<{ ok: boolean; status: number; body: string }> {
   try {
     await ensureRuntime(settings)
-    const base = getRuntimeBaseUrl(settings.deepseek.port)
+    const runtime = getActiveAgentRuntimeSettings(settings)
+    const base = getRuntimeBaseUrl(runtime.port)
     const pathNorm = pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`
     const url = `${base}${pathNorm}`
     const hdrs = new Headers(init.headers ?? {})
@@ -999,8 +1005,8 @@ async function runtimeRequest(
     if (init.body && !hdrs.has('Content-Type')) {
       hdrs.set('Content-Type', 'application/json')
     }
-    if (settings.deepseek.runtimeToken) {
-      hdrs.set('Authorization', `Bearer ${settings.deepseek.runtimeToken}`)
+    if (runtime.runtimeToken) {
+      hdrs.set('Authorization', `Bearer ${runtime.runtimeToken}`)
     }
     const res = await fetch(url, {
       method: init.method ?? 'GET',
@@ -1067,13 +1073,18 @@ app.whenReady().then(async () => {
     const next = normalizeAppSettings({
       ...prev,
       ...partial,
-      deepseek: { ...prev.deepseek, ...(partial.deepseek ?? {}) },
+      agents: {
+        codewhale: {
+          ...prev.agents.codewhale,
+          ...(partial.agents?.codewhale ?? {})
+        }
+      },
       log: { ...prev.log, ...(partial.log ?? {}) },
       notifications: { ...prev.notifications, ...(partial.notifications ?? {}) },
       write: mergeWriteSettings(prev.write, partial.write),
       claw: mergeClawSettings(prev.claw, partial.claw),
       guiUpdate: { ...prev.guiUpdate, ...(partial.guiUpdate ?? {}) },
-      agentProvider: 'deepseek-runtime'
+      agentProvider: partial.agentProvider ?? prev.agentProvider
     })
     if (prev.log.enabled !== next.log.enabled || prev.log.retentionDays !== next.log.retentionDays) {
       configureLogger({ enabled: next.log.enabled, retentionDays: next.log.retentionDays })
@@ -1099,7 +1110,7 @@ app.whenReady().then(async () => {
   const prepareDeepseekBinary = async () => {
     const settings = await store.load()
     try {
-      const pathToBin = await resolveDeepseekExecutable(settings.deepseek.binaryPath)
+      const pathToBin = await resolveDeepseekExecutable(getActiveAgentRuntimeSettings(settings).binaryPath)
       return { ok: true as const, path: pathToBin }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1113,12 +1124,12 @@ app.whenReady().then(async () => {
 
   const checkDeepseekUpdateForSettings = async () => {
     const settings = await store.load()
-    return checkDeepseekTuiUpdate(settings.deepseek.binaryPath)
+    return checkDeepseekTuiUpdate(getActiveAgentRuntimeSettings(settings).binaryPath)
   }
 
   const installDeepseekUpdateForSettings = async () => {
     const settings = await store.load()
-    const installed = await installDeepseekTuiUpdatePackage(settings.deepseek.binaryPath)
+    const installed = await installDeepseekTuiUpdatePackage(getActiveAgentRuntimeSettings(settings).binaryPath)
     if (!installed.ok) return installed
 
     let restarted = false
@@ -1126,10 +1137,10 @@ app.whenReady().then(async () => {
     if (isDeepseekChildRunning()) {
       restarted = true
       await stopDeepseekChildAndWait()
-      if (resolveConfiguredApiKey(settings) && settings.deepseek.autoStart) {
+      if (resolveConfiguredApiKey(settings) && getActiveAgentRuntimeSettings(settings).autoStart) {
         try {
           await startDeepseekChild(settings)
-          healthy = await waitForRuntimeHealth(settings.deepseek.port, 20_000)
+          healthy = await waitForRuntimeHealth(getActiveAgentRuntimeSettings(settings).port, 20_000)
         } catch (error) {
           console.warn('[deepseek-gui] runtime restart failed after deepseek-tui update:', error)
         }
@@ -1196,7 +1207,7 @@ app.whenReady().then(async () => {
         message: e instanceof Error ? e.message : String(e)
       }
     }
-    const ok = await waitForRuntimeHealth(s.deepseek.port, 2_000)
+    const ok = await waitForRuntimeHealth(getActiveAgentRuntimeSettings(s).port, 2_000)
     return { started: true, healthy: ok, pid: isDeepseekChildRunning() }
   })
 
@@ -1215,8 +1226,9 @@ app.whenReady().then(async () => {
     const ac = new AbortController()
     const state: SseControllerState = { controller: ac, stoppedByClient: false }
     sseControllers.set(id, state)
-    const base = getRuntimeBaseUrl(s.deepseek.port)
-    const token = s.deepseek.runtimeToken
+    const runtime = getActiveAgentRuntimeSettings(s)
+    const base = getRuntimeBaseUrl(runtime.port)
+    const token = runtime.runtimeToken
     const u = `${base}/v1/threads/${encodeURIComponent(request.threadId)}/events?since_seq=${request.sinceSeq}`
     const url = new URL(u)
     if (token) url.searchParams.set('token', token)
@@ -1295,7 +1307,7 @@ app.whenReady().then(async () => {
 
   if (resolveConfiguredApiKey(initial)) {
     setTimeout(() => {
-      void resolveDeepseekExecutable(initial.deepseek.binaryPath).catch((err) => {
+      void resolveDeepseekExecutable(getActiveAgentRuntimeSettings(initial).binaryPath).catch((err) => {
         console.warn('[deepseek-gui] prewarm binary:', err)
       })
     }, 1500)

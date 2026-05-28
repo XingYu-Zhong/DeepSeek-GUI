@@ -15,7 +15,7 @@ import type {
   UserInputQuestion
 } from './types'
 import type { AppSettingsV1 } from '@shared/app-settings'
-import { unwrapClawRuntimePromptForDisplay, unwrapClawUserPromptForDisplay } from '@shared/app-settings'
+import { getActiveAgentRuntimeSettings, unwrapClawRuntimePromptForDisplay, unwrapClawUserPromptForDisplay } from '@shared/app-settings'
 import { extractDiffFilePath } from '../lib/diff-stats'
 import { buildTurnDurationByUserId } from './thread-timing'
 
@@ -418,14 +418,15 @@ function toRuntimeError(info: RuntimeErrorJson & { message: string }): Error {
 }
 
 function runtimeExecutionFlags(settings: AppSettingsV1): RuntimeExecutionFlags {
+  const runtime = getActiveAgentRuntimeSettings(settings)
   return {
-    auto_approve: settings.deepseek.approvalPolicy === 'auto',
-    trust_mode: settings.deepseek.sandboxMode === 'danger-full-access'
+    auto_approve: runtime.approvalPolicy === 'auto',
+    trust_mode: runtime.sandboxMode === 'danger-full-access'
   }
 }
 
 function shouldAutoDenyApprovals(settings: AppSettingsV1): boolean {
-  return settings.deepseek.approvalPolicy === 'never'
+  return getActiveAgentRuntimeSettings(settings).approvalPolicy === 'never'
 }
 
 function toolBlockFromItem(item: TurnItemJson): ToolBlock {
@@ -515,9 +516,9 @@ function createSseStreamId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `sse-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-export class DeepseekRuntimeProvider implements AgentProvider {
-  readonly id: AgentProviderId = 'deepseek-runtime'
-  readonly displayName = 'DeepSeek TUI'
+export class CodewhaleRuntimeProvider implements AgentProvider {
+  readonly id: AgentProviderId = 'codewhale'
+  readonly displayName = 'CodeWhale'
 
   private async getThreadRecord(threadId: string): Promise<NormalizedThread> {
     const r = await window.dsGui.runtimeRequest(`/v1/threads/${encodeURIComponent(threadId)}`, 'GET')

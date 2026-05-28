@@ -9,6 +9,7 @@ import {
   DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS,
   DEFAULT_WRITE_INLINE_LONG_COMPLETION_MIN_ACCEPT_SCORE,
   DEFAULT_WRITE_WORKSPACE_ROOT,
+  getActiveAgentRuntimeSettings,
   normalizeWriteInlineCompletionModel,
   type WriteInlineCompletionSettingsV1,
   type WriteSettingsV1
@@ -385,7 +386,7 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
         defaultWorkspaceRoot: write.defaultWorkspaceRoot,
         workspaceRoots: write.workspaces,
         inlineCompletion: write.inlineCompletion,
-        inlineCompletionApiReady: Boolean(settings.deepseek?.apiKey?.trim()),
+        inlineCompletionApiReady: Boolean(getActiveAgentRuntimeSettings(settings).apiKey?.trim()),
         settingsLoading: false,
         settingsError: null
       })
@@ -415,7 +416,7 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
         defaultWorkspaceRoot: write.defaultWorkspaceRoot,
         workspaceRoots: write.workspaces,
         inlineCompletion: write.inlineCompletion,
-        inlineCompletionApiReady: Boolean(settings.deepseek?.apiKey?.trim()),
+        inlineCompletionApiReady: Boolean(getActiveAgentRuntimeSettings(settings).apiKey?.trim()),
         settingsError: null
       })
       await get().initializeWorkspace(write.activeWorkspaceRoot)
@@ -440,7 +441,7 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
         defaultWorkspaceRoot: write.defaultWorkspaceRoot,
         workspaceRoots: write.workspaces,
         inlineCompletion: write.inlineCompletion,
-        inlineCompletionApiReady: Boolean(settings.deepseek?.apiKey?.trim()),
+        inlineCompletionApiReady: Boolean(getActiveAgentRuntimeSettings(settings).apiKey?.trim()),
         settingsError: null
       })
       await get().initializeWorkspace(write.activeWorkspaceRoot)
@@ -473,7 +474,7 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
         defaultWorkspaceRoot: write.defaultWorkspaceRoot,
         workspaceRoots: write.workspaces,
         inlineCompletion: write.inlineCompletion,
-        inlineCompletionApiReady: Boolean(settings.deepseek?.apiKey?.trim()),
+        inlineCompletionApiReady: Boolean(getActiveAgentRuntimeSettings(settings).apiKey?.trim()),
         settingsError: null
       })
       if (normalizePath(get().workspaceRoot) === normalized) {

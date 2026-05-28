@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { AppSettingsV1 } from '../shared/app-settings'
+import { getActiveAgentRuntimeSettings, type AppSettingsV1 } from '../shared/app-settings'
 import { resolveDeepseekExecutable } from './resolve-deepseek-binary'
 
 type DeepseekCommand = {
@@ -10,8 +10,8 @@ type DeepseekCommand = {
 const DEEPSEEK_CONFIG_COMMAND_TIMEOUT_MS = 15_000
 
 function deepseekConfigFieldsChanged(prev: AppSettingsV1, next: AppSettingsV1): boolean {
-  const a = prev.deepseek
-  const b = next.deepseek
+  const a = prev.agents.codewhale
+  const b = next.agents.codewhale
   return (
     a.apiKey !== b.apiKey ||
     a.baseUrl !== b.baseUrl ||
@@ -96,8 +96,8 @@ export async function syncDeepseekTuiConfig(
   if (previous && !deepseekConfigFieldsChanged(previous, settings)) return
 
   const commands: DeepseekCommand[] = [{ args: ['config', 'set', 'provider', 'deepseek'] }]
-  const current = settings.deepseek
-  const prev = previous?.deepseek
+  const current = getActiveAgentRuntimeSettings(settings)
+  const prev = previous ? getActiveAgentRuntimeSettings(previous) : undefined
 
   if (!prev || prev.approvalPolicy !== current.approvalPolicy) {
     commands.push({
@@ -135,7 +135,7 @@ export async function syncDeepseekTuiConfig(
 
   if (commands.length === 0) return
 
-  const bin = await resolveConfigBinary(settings.deepseek.binaryPath)
+  const bin = await resolveConfigBinary(getActiveAgentRuntimeSettings(settings).binaryPath)
   for (const command of commands) {
     await runDeepseekCommand(bin, command)
   }

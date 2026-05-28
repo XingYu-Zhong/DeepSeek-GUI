@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import type { AppSettingsV1 } from '../shared/app-settings'
+import { getActiveAgentRuntimeSettings, type AppSettingsV1 } from '../shared/app-settings'
 import { getRuntimeBaseUrl } from './settings-store'
 import { resolveDeepseekExecutable } from './resolve-deepseek-binary'
 
@@ -133,7 +133,7 @@ export async function inspectDeepseekLaunchConfig(
   | { state: 'deepseek'; pid: number; command: string; matches: true }
   | { state: 'deepseek'; pid: number; command: string; matches: false; reason: string }
 > {
-  const owner = await findListeningProcessOnPort(settings.deepseek.port)
+  const owner = await findListeningProcessOnPort(getActiveAgentRuntimeSettings(settings).port)
   if (!owner) return { state: 'absent' }
 
   const command = [owner.parentCommand, owner.command].filter(Boolean).join('\n')
@@ -142,15 +142,15 @@ export async function inspectDeepseekLaunchConfig(
   }
 
   const mismatches: string[] = []
-  const policy = settings.deepseek.approvalPolicy
+  const policy = getActiveAgentRuntimeSettings(settings).approvalPolicy
   if (policy && !commandHasOption(command, '--approval-policy', policy)) {
     mismatches.push(`approval policy is not ${policy}`)
   }
-  const sandbox = settings.deepseek.sandboxMode
+  const sandbox = getActiveAgentRuntimeSettings(settings).sandboxMode
   if (sandbox && !commandHasOption(command, '--sandbox-mode', sandbox)) {
     mismatches.push(`sandbox mode is not ${sandbox}`)
   }
-  const baseUrl = settings.deepseek.baseUrl?.trim() ?? ''
+  const baseUrl = getActiveAgentRuntimeSettings(settings).baseUrl?.trim() ?? ''
   if (baseUrl && !commandHasOption(command, '--base-url', baseUrl)) {
     mismatches.push(`base url is not ${baseUrl}`)
   }
@@ -230,38 +230,38 @@ export async function reclaimDeepseekPort(
  */
 export async function startDeepseekChild(settings: AppSettingsV1): Promise<void> {
   if (isDeepseekChildRunning()) return
-  const bin = await resolveDeepseekExecutable(settings.deepseek.binaryPath)
+  const bin = await resolveDeepseekExecutable(getActiveAgentRuntimeSettings(settings).binaryPath)
   lastResolvedBinary = bin
-  const port = settings.deepseek.port
+  const port = getActiveAgentRuntimeSettings(settings).port
 
   // Global options (approval policy + sandbox mode) must appear BEFORE the
   // `serve` subcommand. With the runtime's defaults, agentic tools that need
   // approval get auto-denied because `serve --http` has no TTY to prompt on —
   // edit_file / apply_patch / write_file end up failing with "denied by user".
   const args: string[] = []
-  const policy = settings.deepseek.approvalPolicy
+  const policy = getActiveAgentRuntimeSettings(settings).approvalPolicy
   if (policy) args.push('--approval-policy', policy)
-  const sandbox = settings.deepseek.sandboxMode
+  const sandbox = getActiveAgentRuntimeSettings(settings).sandboxMode
   if (sandbox) args.push('--sandbox-mode', sandbox)
-  const baseUrl = settings.deepseek.baseUrl?.trim() ?? ''
+  const baseUrl = getActiveAgentRuntimeSettings(settings).baseUrl?.trim() ?? ''
   if (baseUrl) args.push('--base-url', baseUrl)
 
   args.push('serve', '--http', '--host', '127.0.0.1', '--port', String(port))
 
-  const runtimeToken = settings.deepseek.runtimeToken?.trim() ?? ''
+  const runtimeToken = getActiveAgentRuntimeSettings(settings).runtimeToken?.trim() ?? ''
   if (runtimeToken) {
     args.push('--auth-token', runtimeToken)
   } else {
     args.push('--insecure')
   }
 
-  for (const origin of settings.deepseek.extraCorsOrigins) {
+  for (const origin of getActiveAgentRuntimeSettings(settings).extraCorsOrigins) {
     const o = origin.trim()
     if (o) args.push('--cors-origin', o)
   }
 
   const env = { ...process.env }
-  if (settings.deepseek.apiKey) env.DEEPSEEK_API_KEY = settings.deepseek.apiKey
+  if (getActiveAgentRuntimeSettings(settings).apiKey) env.DEEPSEEK_API_KEY = getActiveAgentRuntimeSettings(settings).apiKey
 
   const proc = spawn(bin, args, {
     env,

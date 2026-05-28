@@ -1,4 +1,6 @@
-export type AgentProviderId = 'deepseek-runtime'
+import type { AgentProviderId as SharedAgentProviderId } from '@shared/agent-catalog'
+
+export type AgentProviderId = SharedAgentProviderId
 
 export type ToolItemKind = 'tool_call' | 'command_execution' | 'file_change'
 
