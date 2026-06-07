@@ -211,16 +211,11 @@ class FetchWebProvider implements WebProvider {
     try {
       const response = await fetch(request.url, { signal: controller.signal })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const contentLength = response.headers.get('content-length')
-      if (contentLength && Number(contentLength) > request.maxBytes) {
-        throw new Error(`content exceeds ${request.maxBytes} byte limit`)
-      }
       const buffer = Buffer.from(await response.arrayBuffer())
-      if (buffer.length > request.maxBytes) {
-        throw new Error(`content exceeds ${request.maxBytes} byte limit`)
-      }
+      const truncated = buffer.length > request.maxBytes
+      const readableBuffer = truncated ? buffer.subarray(0, request.maxBytes) : buffer
       const contentType = response.headers.get('content-type') ?? undefined
-      const raw = buffer.toString('utf8')
+      const raw = readableBuffer.toString('utf8')
       const extracted = extractReadableText(raw, contentType)
       const finalUrl = response.url || request.url
       return {
@@ -232,7 +227,7 @@ class FetchWebProvider implements WebProvider {
         text: extracted.text,
         retrievedAt: this.nowIso(),
         byteCount: buffer.length,
-        truncated: false
+        truncated
       }
     } finally {
       clearTimeout(timeout)

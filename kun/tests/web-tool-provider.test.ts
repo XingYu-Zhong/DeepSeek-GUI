@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CapabilityRegistry } from '../src/adapters/tool/capability-registry.js'
 import { LocalToolHost } from '../src/adapters/tool/local-tool-host.js'
 import { buildWebToolProviders } from '../src/adapters/tool/web-tool-provider.js'
@@ -48,6 +48,10 @@ function deterministicProvider() {
 }
 
 describe('Web tool provider', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('does not advertise web tools when web access is disabled', async () => {
     const config = KunCapabilitiesConfig.parse({})
     const built = buildWebToolProviders(config.web, { provider: deterministicProvider() })
@@ -101,6 +105,45 @@ describe('Web tool provider', () => {
         policy: 'allowed',
         provider: 'test-search',
         byteCount: 20
+      })
+    }
+  })
+
+  it('truncates oversized fetch responses instead of failing', async () => {
+    vi.stubGlobal('fetch', async () => new Response('abcdefghijklmnopqrstuvwxyz', {
+      headers: {
+        'content-length': '26',
+        'content-type': 'text/plain'
+      }
+    }))
+    const config = KunCapabilitiesConfig.parse({
+      web: {
+        enabled: true,
+        fetchEnabled: true,
+        allowDomains: ['docs.example.test']
+      }
+    })
+    const host = new LocalToolHost({
+      registry: new CapabilityRegistry(buildWebToolProviders(config.web).providers)
+    })
+
+    const result = await host.execute({
+      callId: 'call_1',
+      toolName: 'web_fetch',
+      arguments: { url: 'https://docs.example.test/large', max_bytes: 10 }
+    }, buildContext())
+
+    expect(result.item).toMatchObject({ kind: 'tool_result', isError: false })
+    if (result.item.kind === 'tool_result') {
+      expect(result.item.output).toMatchObject({
+        text: 'abcdefghij',
+        byteCount: 26,
+        truncated: true,
+        telemetry: {
+          policy: 'allowed',
+          provider: 'fetch',
+          byteCount: 26
+        }
       })
     }
   })
