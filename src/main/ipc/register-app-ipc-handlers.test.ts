@@ -120,6 +120,35 @@ describe('registerAppIpcHandlers', () => {
     expect(applySettingsPatch).toHaveBeenCalledWith(payload)
   })
 
+  it('uses the saved UI font scale for the Windows titlebar overlay height', async () => {
+    const { registerAppIpcHandlers } = await import('./register-app-ipc-handlers')
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const savedSettings = { ...settings(), uiFontScale: 'medium' as const }
+    const setTitleBarOverlay = vi.fn()
+    const mainWindow = {
+      isDestroyed: vi.fn(() => false),
+      setTitleBarOverlay
+    }
+
+    try {
+      registerAppIpcHandlers(registerOptions({
+        store: { load: vi.fn(async () => savedSettings) } as never,
+        getMainWindow: () => mainWindow as never
+      }))
+
+      const handler = handlers.get('windows:titlebar-theme')
+      await handler?.({}, 'dark')
+
+      expect(setTitleBarOverlay).toHaveBeenCalledWith({
+        color: '#101010',
+        symbolColor: '#ffffff',
+        height: 35
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
   it('passes schedule settings patches through to applySettingsPatch', async () => {
     const { registerAppIpcHandlers } = await import('./register-app-ipc-handlers')
     const applySettingsPatch = vi.fn(async (partial: AppSettingsPatch) => ({

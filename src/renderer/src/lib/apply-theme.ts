@@ -1,5 +1,8 @@
+import type { UiFontScale } from '../../../shared/app-settings'
+import { uiFontScaleFactor } from '../../../shared/ui-font-scale'
+
 export type ThemePreference = 'system' | 'light' | 'dark'
-export type UiFontScale = 'small' | 'medium' | 'large'
+export type { UiFontScale } from '../../../shared/app-settings'
 
 let removeSystemListener: (() => void) | null = null
 
@@ -44,11 +47,5 @@ export function applyTheme(pref: ThemePreference): void {
 
 export function applyUiFontScale(scale: UiFontScale): void {
   const root = document.documentElement
-  const factor =
-    scale === 'small'
-      ? '0.82'
-      : scale === 'large'
-        ? '1'
-        : '0.88'
-  root.style.setProperty('--ds-ui-scale', factor)
+  root.style.setProperty('--ds-ui-scale', String(uiFontScaleFactor(scale)))
 }

@@ -59,6 +59,7 @@ import {
 } from './weixin-bridge-runtime'
 import { webhookUrl } from './claw-runtime-helpers'
 import { isKunHealthResponseBody } from './kun-health'
+import { uiFontScaleFactor } from '../shared/ui-font-scale'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const APP_USER_MODEL_ID = 'com.xingyuzhong.deepseekgui'
@@ -146,6 +147,7 @@ if (!runningClawScheduleMcpServer && process.platform === 'win32') {
 
 let mainWindow: BrowserWindow | null = null
 let store: JsonSettingsStore
+let currentAppSettings: AppSettingsV1 | null = null
 let logDir = ''
 let clawRuntime: ClawRuntime | null = null
 let scheduleRuntime: ScheduleRuntime | null = null
@@ -256,11 +258,15 @@ function createAppIcon(source: string): Electron.NativeImage {
     : nativeImage.createFromPath(source)
 }
 
-function desktopTitleBarOverlayOptions(): Electron.TitleBarOverlayOptions {
+function desktopTitleBarOverlayHeight(uiFontScale: AppSettingsV1['uiFontScale']): number {
+  return Math.round(DESKTOP_TITLEBAR_OVERLAY_HEIGHT * uiFontScaleFactor(uiFontScale))
+}
+
+function desktopTitleBarOverlayOptions(uiFontScale: AppSettingsV1['uiFontScale']): Electron.TitleBarOverlayOptions {
   return {
     color: '#f5f7fa',
     symbolColor: '#222222',
-    height: DESKTOP_TITLEBAR_OVERLAY_HEIGHT
+    height: desktopTitleBarOverlayHeight(uiFontScale)
   }
 }
 
@@ -285,7 +291,7 @@ type TurnCompleteNotificationPayload = {
 
 function revealMainWindow(): void {
   if (!mainWindow) {
-    createWindow()
+    createWindow(currentAppSettings ?? undefined)
   }
   if (!mainWindow) return
   if (mainWindow.isMinimized()) mainWindow.restore()
@@ -537,7 +543,7 @@ async function ensureKunRuntime(settings: AppSettingsV1): Promise<void> {
   }
 }
 
-function createWindow(): void {
+function createWindow(settings: Pick<AppSettingsV1, 'uiFontScale'> = { uiFontScale: 'small' }): void {
   traceStartup('createWindow:start')
   const preloadPath = resolvePreloadPath()
   const usesDesktopTitleBar = process.platform === 'win32' || process.platform === 'linux'
@@ -548,7 +554,7 @@ function createWindow(): void {
     minHeight: 640,
     icon: appIcon.isEmpty() ? undefined : appIcon,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : usesDesktopTitleBar ? 'hidden' : 'default',
-    titleBarOverlay: usesDesktopTitleBar ? desktopTitleBarOverlayOptions() : undefined,
+    titleBarOverlay: usesDesktopTitleBar ? desktopTitleBarOverlayOptions(settings.uiFontScale) : undefined,
     trafficLightPosition: process.platform === 'darwin' ? { x: 31, y: 22 } : undefined,
     autoHideMenuBar: usesDesktopTitleBar,
     show: false,
@@ -700,6 +706,7 @@ app.whenReady().then(async () => {
   store = new JsonSettingsStore(app.getPath('userData'))
   traceStartup('settings load:start')
   const initial = await store.load()
+  currentAppSettings = initial
   traceStartup('settings load:done')
   await syncClawScheduleMcpConfig(initial, getClawScheduleMcpLaunchConfig()).catch((error) => {
     console.error('[claw-schedule-mcp] failed to sync config on startup:', error)
@@ -761,6 +768,7 @@ app.whenReady().then(async () => {
     if (prev.guiUpdate.channel !== saved.guiUpdate.channel && guiUpdaterModulePromise) {
       void guiUpdaterModulePromise.then((module) => module.setGuiUpdateChannel(saved.guiUpdate.channel))
     }
+    currentAppSettings = saved
     queueRuntimeSettingsApply(prev, saved)
     scheduleRuntime?.sync(saved)
     clawRuntime?.sync(saved)
@@ -805,7 +813,7 @@ app.whenReady().then(async () => {
   registerRuntimeSseIpc({ ipcMain, store, ensureRuntime, logError })
   traceStartup('ipc registration:done')
 
-  createWindow()
+  createWindow(initial)
   traceStartup('createWindow:returned')
 
   void pruneOnStartup().catch((err) => {
@@ -828,7 +836,7 @@ app.whenReady().then(async () => {
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(currentAppSettings ?? undefined)
   })
 }).catch((error) => {
   const message = error instanceof Error ? error.message : String(error)

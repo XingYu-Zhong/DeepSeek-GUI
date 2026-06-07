@@ -90,6 +90,7 @@ import {
 } from '../services/write-inline-completion-service'
 import { copyWriteDocumentAsRichText, exportWriteDocument } from '../services/write-export-service'
 import { listGuiSkills } from '../services/skill-service'
+import { uiFontScaleFactor } from '../../shared/ui-font-scale'
 
 type GuiUpdaterModule = typeof import('../gui-updater')
 
@@ -137,11 +138,18 @@ function parseIpcPayload<T>(channel: string, schema: z.ZodType<T>, payload: unkn
 
 const DESKTOP_TITLEBAR_OVERLAY_HEIGHT = 40
 
-function desktopTitleBarOverlayForTheme(theme: WindowsTitleBarTheme): Electron.TitleBarOverlayOptions {
+function desktopTitleBarOverlayHeight(uiFontScale: AppSettingsV1['uiFontScale']): number {
+  return Math.round(DESKTOP_TITLEBAR_OVERLAY_HEIGHT * uiFontScaleFactor(uiFontScale))
+}
+
+function desktopTitleBarOverlayForTheme(
+  theme: WindowsTitleBarTheme,
+  uiFontScale: AppSettingsV1['uiFontScale']
+): Electron.TitleBarOverlayOptions {
   return {
     color: theme === 'dark' ? '#101010' : '#f5f7fa',
     symbolColor: theme === 'dark' ? '#ffffff' : '#222222',
-    height: DESKTOP_TITLEBAR_OVERLAY_HEIGHT
+    height: desktopTitleBarOverlayHeight(uiFontScale)
   }
 }
 
@@ -724,12 +732,12 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   })
   ipcMain.handle('windows:titlebar-theme', async (_, theme: unknown) => {
     if (process.platform === 'darwin') return
+    const parsedTheme = parseIpcPayload('windows:titlebar-theme', windowsTitleBarThemeSchema, theme)
     const mainWindow = getMainWindow()
     if (!mainWindow || mainWindow.isDestroyed()) return
+    const settings = await store.load()
     mainWindow.setTitleBarOverlay(
-      desktopTitleBarOverlayForTheme(
-        parseIpcPayload('windows:titlebar-theme', windowsTitleBarThemeSchema, theme)
-      )
+      desktopTitleBarOverlayForTheme(parsedTheme, settings.uiFontScale)
     )
   })
   ipcMain.handle('shell:open-external', async (_, url: unknown) => {
