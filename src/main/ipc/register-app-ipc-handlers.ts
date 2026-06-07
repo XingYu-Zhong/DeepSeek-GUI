@@ -22,7 +22,6 @@ import type {
   SystemNotificationResult,
   TurnCompleteNotificationPayload,
   UpstreamModelsResult,
-  WindowsTitleBarTheme,
   WorkspacePickResult
 } from '../../shared/ds-gui-api'
 import type { GuiUpdateDownloadResult, GuiUpdateInfo, GuiUpdateInstallResult, GuiUpdateState } from '../../shared/gui-update'
@@ -58,7 +57,6 @@ import {
   writeExportPayloadSchema,
   writeRichClipboardPayloadSchema,
   writeInlineCompletionPayloadSchema,
-  windowsTitleBarThemeSchema,
   workspaceRootSchema
 } from './app-ipc-schemas'
 import type { JsonSettingsStore } from '../settings-store'
@@ -135,15 +133,6 @@ function parseIpcPayload<T>(channel: string, schema: z.ZodType<T>, payload: unkn
   throw new Error(`Invalid payload for ${channel}: ${issue?.message ?? 'Bad request.'}`)
 }
 
-const DESKTOP_TITLEBAR_OVERLAY_HEIGHT = 40
-
-function desktopTitleBarOverlayForTheme(theme: WindowsTitleBarTheme): Electron.TitleBarOverlayOptions {
-  return {
-    color: theme === 'dark' ? '#101010' : '#f5f7fa',
-    symbolColor: theme === 'dark' ? '#ffffff' : '#222222',
-    height: DESKTOP_TITLEBAR_OVERLAY_HEIGHT
-  }
-}
 
 function runDesktopCommand(
   command: DesktopCommand,
@@ -720,16 +709,6 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       parseIpcPayload('desktop:command', desktopCommandSchema, command),
       event.sender,
       getMainWindow
-    )
-  })
-  ipcMain.handle('windows:titlebar-theme', async (_, theme: unknown) => {
-    if (process.platform === 'darwin') return
-    const mainWindow = getMainWindow()
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    mainWindow.setTitleBarOverlay(
-      desktopTitleBarOverlayForTheme(
-        parseIpcPayload('windows:titlebar-theme', windowsTitleBarThemeSchema, theme)
-      )
     )
   })
   ipcMain.handle('shell:open-external', async (_, url: unknown) => {

@@ -20,12 +20,6 @@ export function applyTheme(pref: ThemePreference): void {
   const apply = (): void => {
     const mode = resolvedMode(pref)
     root.setAttribute('data-theme', mode)
-    if (
-      window.dsGui?.platform !== 'darwin' &&
-      typeof window.dsGui.setWindowsTitleBarTheme === 'function'
-    ) {
-      void window.dsGui.setWindowsTitleBarTheme(mode)
-    }
   }
 
   if (pref === 'system') {

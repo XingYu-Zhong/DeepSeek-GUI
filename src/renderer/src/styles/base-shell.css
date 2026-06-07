@@ -100,7 +100,6 @@
 :root[data-platform='win32'],
 :root[data-platform='linux'] {
   --ds-windows-titlebar-height: 40px;
-  --ds-windows-caption-controls-width: 138px;
 }
 
 [data-theme='dark'] {
@@ -247,7 +246,7 @@ html {
   min-height: var(--ds-windows-titlebar-height, 40px);
   flex: 0 0 var(--ds-windows-titlebar-height, 40px);
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   border-bottom: 1px solid var(--ds-border-muted);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(246, 248, 251, 0.72)),
@@ -259,7 +258,7 @@ html {
 .ds-windows-titlebar-content {
   display: flex;
   min-width: 0;
-  max-width: calc(100% - var(--ds-windows-caption-controls-width, 138px));
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
   padding-left: 12px;
@@ -359,10 +358,49 @@ html {
   background: var(--ds-border-muted);
 }
 
+/* Window control buttons (minimize, maximize/restore, close) */
+
+.ds-window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  height: 100%;
+}
+
+.ds-window-control-btn {
+  display: inline-flex;
+  width: 46px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.ds-window-control-btn:hover {
+  background: var(--ds-surface-hover);
+  color: var(--ds-text);
+}
+
+.ds-window-control-btn--close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
 [data-theme='dark'] .ds-windows-titlebar {
   background:
     linear-gradient(180deg, rgba(24, 24, 24, 0.92), rgba(16, 16, 16, 0.82)),
     var(--ds-bg-main);
+}
+
+[data-theme='dark'] .ds-window-control-btn--close:hover {
+  background: #c42b1c;
+  color: #ffffff;
 }
 
 [data-theme='dark'] .ds-windows-menu-popover {

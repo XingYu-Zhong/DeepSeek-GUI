@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DesktopCommand } from '@shared/ds-gui-api'
 import deepseekLogo from '../../../asset/img/deepseek.png'
@@ -130,6 +130,41 @@ export function buildWindowsTitleBarMenuSections(
   ]
 }
 
+/* ---------- SVG window-control icons (10×10 viewBox) ---------- */
+
+function MinimizeIcon(): ReactElement {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+      <path d="M1 5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function MaximizeIcon(): ReactElement {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  )
+}
+
+function RestoreIcon(): ReactElement {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M3.5 2.5V1.8a.8.8 0 0 1 .8-.8h4.4a.8.8 0 0 1 .8.8v4.4a.8.8 0 0 1-.8.8H8" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  )
+}
+
+function CloseIcon(): ReactElement {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+      <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function WindowsTitleBar({ platform, actions }: Props): ReactElement | null {
   const resolvedPlatform = platform ?? currentPlatform()
   const { t } = useTranslation('common')
@@ -137,6 +172,7 @@ export function WindowsTitleBar({ platform, actions }: Props): ReactElement | nu
   const chooseWorkspace = useChatStore((s) => s.chooseWorkspace)
   const openSettings = useChatStore((s) => s.openSettings)
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
+  const [isMaximized, setIsMaximized] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
   const defaultActions = useMemo<WindowsTitleBarActions>(() => ({
@@ -186,6 +222,38 @@ export function WindowsTitleBar({ platform, actions }: Props): ReactElement | nu
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [activeMenuId])
+
+  /* Listen for Electron maximize / unmaximize events via the
+     resize event to toggle the maximize/restore icon. */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const checkMaximized = (): void => {
+      // Heuristic: in Electron, when the window is maximized via `win.maximize()`,
+      // screenX/screenY are 0 (or -8 with shadow compensation on Windows)
+      // and outerWidth/outerHeight fill the screen.  This is the most
+      // reliable cross-platform signal available from the renderer.
+      const isMax =
+        window.outerWidth >= window.screen.availWidth &&
+        window.outerHeight >= window.screen.availHeight
+      setIsMaximized(isMax)
+    }
+    checkMaximized()
+    window.addEventListener('resize', checkMaximized)
+    return () => window.removeEventListener('resize', checkMaximized)
+  }, [])
+
+
+  const handleMinimize = useCallback((): void => {
+    void resolvedActions.runDesktopCommand('minimize')
+  }, [resolvedActions])
+
+  const handleToggleMaximize = useCallback((): void => {
+    void resolvedActions.runDesktopCommand('toggleMaximize')
+  }, [resolvedActions])
+
+  const handleClose = useCallback((): void => {
+    void resolvedActions.runDesktopCommand('close')
+  }, [resolvedActions])
 
   if (!supportsDesktopTitleBar(resolvedPlatform)) return null
 
@@ -241,6 +309,33 @@ export function WindowsTitleBar({ platform, actions }: Props): ReactElement | nu
           })}
         </nav>
       </div>
+      <div className="ds-window-controls ds-no-drag">
+        <button
+          type="button"
+          className="ds-window-control-btn"
+          aria-label={t('windowsMenuMinimize')}
+          onClick={handleMinimize}
+        >
+          <MinimizeIcon />
+        </button>
+        <button
+          type="button"
+          className="ds-window-control-btn"
+          aria-label={t('windowsMenuToggleMaximize')}
+          onClick={handleToggleMaximize}
+        >
+          {isMaximized ? <RestoreIcon /> : <MaximizeIcon />}
+        </button>
+        <button
+          type="button"
+          className="ds-window-control-btn ds-window-control-btn--close"
+          aria-label={t('windowsMenuClose')}
+          onClick={handleClose}
+        >
+          <CloseIcon />
+        </button>
+      </div>
     </div>
   )
 }
+

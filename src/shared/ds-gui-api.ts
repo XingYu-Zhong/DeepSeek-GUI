@@ -74,7 +74,6 @@ export const DESKTOP_COMMANDS = [
   'quit'
 ] as const
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
-export type WindowsTitleBarTheme = 'light' | 'dark'
 export type SkillSaveResult = { ok: true; path: string } | { ok: false; message: string }
 export type SkillListItem = {
   id: string
@@ -210,7 +209,6 @@ export type DsGuiApi = {
     options?: { workspaceRoot?: string; modelHint?: string; mode?: 'agent' | 'plan' }
   ) => Promise<ScheduleTaskFromTextResult>
   runDesktopCommand: (command: DesktopCommand) => Promise<void>
-  setWindowsTitleBarTheme: (theme: WindowsTitleBarTheme) => Promise<void>
   openExternal: (url: string) => Promise<void>
   showTurnCompleteNotification: (
     payload: TurnCompleteNotificationPayload

@@ -712,7 +712,6 @@ export const guiUpdateChannelSchema = z.enum(GUI_UPDATE_CHANNELS).optional()
 
 export const desktopCommandSchema = z.enum(DESKTOP_COMMANDS)
 
-export const windowsTitleBarThemeSchema = z.enum(['light', 'dark'])
 
 export const logErrorPayloadSchema = z
   .object({
