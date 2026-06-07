@@ -8,7 +8,12 @@ import {
   type AppSettingsV1
 } from '@shared/app-settings'
 import { KunRuntimeProvider } from './kun-runtime'
-import { getProvider, resetProviderCacheForTests } from './registry'
+import {
+  getAgentProviderDescriptor,
+  getProvider,
+  listAgentProviderDescriptors,
+  resetProviderCacheForTests
+} from './registry'
 import { rendererRuntimeClient } from './runtime-client'
 import type { ThreadEventSink } from './types'
 
@@ -780,6 +785,26 @@ describe('KunRuntimeProvider', () => {
 })
 
 describe('registry', () => {
+  it('lists Kun and planned Codex CLI provider descriptors', () => {
+    expect(listAgentProviderDescriptors()).toEqual([
+      expect.objectContaining({
+        id: 'kun',
+        displayName: 'Kun',
+        status: 'available'
+      }),
+      expect.objectContaining({
+        id: 'codex-cli',
+        displayName: 'Codex CLI',
+        status: 'planned'
+      })
+    ])
+    expect(getAgentProviderDescriptor('codex-cli')).toMatchObject({
+      id: 'codex-cli',
+      displayName: 'Codex CLI',
+      status: 'planned'
+    })
+  })
+
   it('returns a cached provider for the kun id', () => {
     resetProviderCacheForTests()
     const first = getProvider()
@@ -787,4 +812,8 @@ describe('registry', () => {
     expect(first).toBe(second)
   })
 
+  it('keeps unimplemented providers out of the runtime path', () => {
+    resetProviderCacheForTests()
+    expect(() => getProvider('codex-cli')).toThrow('Agent provider is not implemented yet: codex-cli')
+  })
 })

@@ -362,8 +362,10 @@ export type ThreadEventSink = {
   onUsage?(usage: ThreadUsageSnapshot): void
 }
 
+export type AgentProviderId = 'kun' | 'codex-cli'
+
 export interface AgentProvider {
-  readonly id: 'kun'
+  readonly id: AgentProviderId
   readonly displayName: string
   getCapabilities(): {
     interrupt: boolean
