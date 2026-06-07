@@ -129,7 +129,7 @@ wild:
 > Thanks to the Reasonix team for sharing the runnable references
 > that made this design pillar testable in the first place. Nearly
 > every performance trait of Kun — cache hit rate, token replay,
-> reconnect, and interruptable approvals — can be traced back to
+> reconnect, and interruptible approvals — can be traced back to
 > this project. The full design rationale
 > and the borrow map live in
 > [`docs/kun-architecture.md`](docs/kun-architecture.md).
