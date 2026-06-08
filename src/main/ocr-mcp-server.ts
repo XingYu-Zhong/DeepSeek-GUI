@@ -92,27 +92,57 @@ let workerReady = false
 const pendingRequests = new Map<string, { resolve: (data: unknown) => void; reject: (err: Error) => void }>()
 
 function getWorkerEntryPath(): string {
-  // In development: out/main/ocr-worker-entry.js (compiled by electron-vite)
-  // In packaged app: app.asar.unpacked/out/main/ocr-worker-entry.js
-  // We resolve relative to this module's location.
-  const thisDir = dirname(__filename || __dirname)
+  // In the packaged Electron app, __filename resolves to:
+  //   app.asar/out/main/chunks/ocr-mcp-server-*.js
+  // The worker entry is unpacked to:
+  //   app.asar.unpacked/out/main/ocr-worker-entry.js
+  // (no chunks/ subdirectory — it's a separate rollup entry point)
+  //
+  // In development, both files are in out/main/ or out/main/chunks/.
+
   const entryName = 'ocr-worker-entry.js'
 
-  // Try unpacked path first (packaged app)
-  const unpacked = thisDir.replace(
-    `${sep}app.asar${sep}`,
-    `${sep}app.asar.unpacked${sep}`
-  )
-  const unpackedPath = join(unpacked, entryName)
-  if (existsSync(unpackedPath)) {
-    dlog('getWorkerEntryPath: using unpacked', { unpackedPath })
-    return unpackedPath
+  // Strategy: resolve from __dirname, going up to out/main/ level.
+  // __dirname = .../out/main/chunks/ → parent = .../out/main/
+  const mainDir = dirname(__dirname)
+
+  // 1. Try unpacked path (packaged app): replace app.asar → app.asar.unpacked
+  if (__dirname.includes(`${sep}app.asar${sep}`)) {
+    const unpackedMain = mainDir.replace(
+      `${sep}app.asar${sep}`,
+      `${sep}app.asar.unpacked${sep}`
+    )
+    const unpackedPath = join(unpackedMain, entryName)
+    if (existsSync(unpackedPath)) {
+      dlog('getWorkerEntryPath: unpacked', { unpackedPath })
+      return unpackedPath
+    }
+    // Also try same directory (in case chunks/ layout changes)
+    const unpackedSame = join(
+      __dirname.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`),
+      entryName
+    )
+    if (existsSync(unpackedSame)) {
+      dlog('getWorkerEntryPath: unpacked-same', { unpackedSame })
+      return unpackedSame
+    }
   }
 
-  // Development: same directory as this module
-  const devPath = join(thisDir, entryName)
-  dlog('getWorkerEntryPath: using dev', { devPath })
-  return devPath
+  // 2. Development: try parent (out/main/) then same dir (out/main/chunks/)
+  const parentPath = join(mainDir, entryName)
+  if (existsSync(parentPath)) {
+    dlog('getWorkerEntryPath: parent', { parentPath })
+    return parentPath
+  }
+  const samePath = join(__dirname, entryName)
+  if (existsSync(samePath)) {
+    dlog('getWorkerEntryPath: same', { samePath })
+    return samePath
+  }
+
+  // 3. Fallback: try the parent path anyway (will fail at fork with clear error)
+  dlog('getWorkerEntryPath: fallback', { parentPath })
+  return parentPath
 }
 
 function ensureWorker(): ChildProcess {
