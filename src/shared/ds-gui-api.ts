@@ -222,4 +222,5 @@ export type DsGuiApi = {
   logError: (category: string, message: string, detail?: unknown) => Promise<void>
   getLogPath: () => Promise<string>
   openLogDir: () => Promise<{ ok: boolean; message?: string }>
+  getPathForFile: (file: File) => string
 }

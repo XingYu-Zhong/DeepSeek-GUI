@@ -1174,17 +1174,59 @@ export function FloatingComposer({
   }
 
   const handleComposerDragOver = (event: ReactDragEvent<HTMLDivElement>): void => {
-    if (!canPickAttachment || !imageTransferHasImages(event.dataTransfer)) return
+    const transferHasFiles = Array.from(event.dataTransfer.types ?? []).includes('Files')
+    const canAcceptImages = canPickAttachment && imageTransferHasImages(event.dataTransfer)
+    if (!transferHasFiles && !canAcceptImages) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
   }
 
+  const insertPathsAtCursor = (paths: string[]): void => {
+    if (paths.length === 0) return
+    const textarea = draft.textareaRef.current
+    const currentValue = input
+    const selectionStart = textarea?.selectionStart ?? composerCursor ?? currentValue.length
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart
+    const before = currentValue.slice(0, selectionStart)
+    const after = currentValue.slice(selectionEnd)
+    const needsLeadingSpace = before.length > 0 && !/\s$/.test(before)
+    const needsTrailingSpace = after.length > 0 && !/^\s/.test(after)
+    const insertion = `${needsLeadingSpace ? ' ' : ''}${paths.join(' ')}${needsTrailingSpace ? ' ' : ''}`
+    const nextInput = `${before}${insertion}${after}`
+    const nextCursor = before.length + insertion.length - (needsTrailingSpace ? 1 : 0)
+    setInput(nextInput)
+    window.requestAnimationFrame(() => {
+      const el = draft.textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(nextCursor, nextCursor)
+      setComposerCursor(nextCursor)
+    })
+  }
+
   const handleComposerDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
-    if (!canPickAttachment || !onPickAttachments) return
-    const files = imageFilesFromTransfer(event.dataTransfer)
-    if (files.length === 0) return
+    const imageFiles = canPickAttachment ? imageFilesFromTransfer(event.dataTransfer) : []
+    const rawFiles = Array.from(event.dataTransfer.files ?? [])
+    const isImageLike = (file: File): boolean =>
+      isImageMimeType(file.type) || Boolean(imageMimeTypeFromFileName(file.name))
+    const pathFiles = rawFiles.filter((file) => !isImageLike(file))
+    if (imageFiles.length === 0 && pathFiles.length === 0) return
     event.preventDefault()
-    onPickAttachments(files)
+    if (imageFiles.length > 0 && onPickAttachments) {
+      onPickAttachments(imageFiles)
+    }
+    if (pathFiles.length > 0) {
+      const paths: string[] = []
+      for (const file of pathFiles) {
+        try {
+          const path = window.dsGui.getPathForFile(file)
+          if (path) paths.push(path)
+        } catch {
+          // ignore files we can't resolve a path for
+        }
+      }
+      insertPathsAtCursor(paths)
+    }
     draft.focusComposer()
   }
 
