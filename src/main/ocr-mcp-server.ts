@@ -520,8 +520,8 @@ async function renderPdfPageToPng(
 
   const page = await pdf.getPage(pageIndex + 1)
   const viewport = page.getViewport({ scale })
-  const canvas = pdfCanvasFactory.create(viewport.width, viewport.height)
-  const ctx = canvas.getContext('2d')!
+  // pdfCanvasFactory.create() returns { canvas: NodeCanvas, context: NodeContext }
+  const { canvas: nodeCanvas, context: ctx } = pdfCanvasFactory.create(viewport.width, viewport.height)
 
   await page.render({
     canvasContext: ctx,
@@ -530,7 +530,7 @@ async function renderPdfPageToPng(
   }).promise
 
   const tmpPath = join(workDir, `page-${pageIndex}.png`)
-  const pngBytes = canvas.toPNG()
+  const pngBytes = nodeCanvas.toPNG()
   await writeFile(tmpPath, pngBytes)
   return tmpPath
 }
