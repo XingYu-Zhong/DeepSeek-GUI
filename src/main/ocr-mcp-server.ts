@@ -1,7 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { recognize, type RecognizeResult } from 'tesseract.js'
+import Tesseract, { type RecognizeResult } from 'tesseract.js'
+
+const { recognize } = Tesseract
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { PNG } from 'pngjs'
 import { PDFDocument } from 'pdf-lib'
