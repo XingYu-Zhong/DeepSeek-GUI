@@ -23,6 +23,19 @@ export function groupTurns(blocks: ChatBlock[]): Turn[] {
   return turns
 }
 
+export function stableTurnKey(turn: Turn, fallbackIndex: number): string {
+  return turn.user?.id ?? turn.blocks[0]?.id ?? `turn-${fallbackIndex}`
+}
+
+export function sameTurnContent(left: Turn, right: Turn): boolean {
+  if (left.user !== right.user) return false
+  if (left.blocks.length !== right.blocks.length) return false
+  for (let index = 0; index < left.blocks.length; index += 1) {
+    if (left.blocks[index] !== right.blocks[index]) return false
+  }
+  return true
+}
+
 export function splitThink(text: string): { think: string; content: string } {
   const match = text.match(/<think>([\s\S]*?)(?:<\/think>|$)/)
   if (!match) return { think: '', content: text }

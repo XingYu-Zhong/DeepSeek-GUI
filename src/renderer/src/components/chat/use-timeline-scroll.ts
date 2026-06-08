@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import type { ChatBlock } from '../../agent/types'
 
 /** Threshold (px) from the top of the scroll container that triggers
  * auto-loading earlier turns. */
@@ -17,7 +16,7 @@ type UseTimelineScrollOptions = {
   totalTurns: number
   busy: boolean
   /** Triggers stick-to-bottom snap scroll. */
-  scrollDeps: { blocks: ChatBlock[]; live: string; liveReasoning: string }
+  scrollDeps: { contentKey: string; streaming: boolean }
 }
 
 export type UseTimelineScrollResult = {
@@ -64,7 +63,7 @@ export function useTimelineScroll({
   busy,
   scrollDeps
 }: UseTimelineScrollOptions): UseTimelineScrollResult {
-  const { blocks, live, liveReasoning } = scrollDeps
+  const { contentKey, streaming } = scrollDeps
   const shouldCollapseHistory = totalTurns > autoCollapseThreshold
   const [visibleTurnCount, setVisibleTurnCount] = useState(() =>
     deriveTimelineVisibleTurnCount({
@@ -132,11 +131,11 @@ export function useTimelineScroll({
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null
       endRef.current?.scrollIntoView({
-        behavior: live || liveReasoning ? 'auto' : 'smooth',
+        behavior: streaming ? 'auto' : 'smooth',
         block: 'end'
       })
     })
-  }, [blocks, endRef, live, liveReasoning])
+  }, [contentKey, endRef, streaming])
 
   // Hard reset on thread switch.
   useEffect(() => {
