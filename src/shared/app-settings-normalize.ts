@@ -1,8 +1,10 @@
 import {
   DEFAULT_GUI_UPDATE_CHANNEL,
   normalizeGuiUpdateChannel,
+  DEFAULT_BACKGROUND_IMAGE_SETTINGS,
   type AppBehaviorConfigV1,
   type AppSettingsV1,
+  type BackgroundImageSettingsV1,
   type ClawSettingsPatchV1,
   type GuiUpdateConfigV1,
   type NotificationConfigV1,
@@ -71,6 +73,17 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
       channel: normalizeGuiUpdateChannel(
         maybeSettings.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL
       )
+    },
+    backgroundImage: {
+      dataUrl: typeof maybeSettings.backgroundImage?.dataUrl === 'string'
+        ? maybeSettings.backgroundImage.dataUrl
+        : DEFAULT_BACKGROUND_IMAGE_SETTINGS.dataUrl,
+      opacity: typeof maybeSettings.backgroundImage?.opacity === 'number'
+        ? maybeSettings.backgroundImage.opacity
+        : DEFAULT_BACKGROUND_IMAGE_SETTINGS.opacity,
+      blur: typeof maybeSettings.backgroundImage?.blur === 'number'
+        ? maybeSettings.backgroundImage.blur
+        : DEFAULT_BACKGROUND_IMAGE_SETTINGS.blur
     }
   }
 }

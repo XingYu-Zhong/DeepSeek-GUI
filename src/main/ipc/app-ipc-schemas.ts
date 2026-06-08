@@ -470,6 +470,11 @@ const settingsPatchObjectSchema = z.object({
   locale: localeSchema.optional(),
   theme: themeSchema.optional(),
   uiFontScale: uiFontScaleSchema.optional(),
+  backgroundImage: z.object({
+    dataUrl: z.string().max(2_000_000).optional(),
+    opacity: z.number().min(0).max(1).optional(),
+    blur: z.number().min(0).max(50).optional()
+  }).optional(),
   provider: modelProviderPatchSchema.optional(),
   agents: z.object({
     kun: kunRuntimePatchSchema.optional()

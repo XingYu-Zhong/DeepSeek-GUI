@@ -92,7 +92,11 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
     resetClawWorkspaceToDefault,
     clawWorkspacePickerError,
     splitSettingsList,
-    listSettingsText
+    listSettingsText,
+    handleBackgroundImageSelect,
+    handleBackgroundImageClear,
+    handleBackgroundImageOpacityChange,
+    handleBackgroundImageBlurChange
   } = ctx
   const platform = typeof window !== 'undefined' ? window.dsGui?.platform ?? '' : ''
   const openAtLoginSupported = platform === 'win32' || platform === 'darwin'
@@ -238,6 +242,91 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
                     </div>
                   }
                 />
+              </SettingsCard>
+
+              <SettingsCard title={t('backgroundImage')} className="mt-6">
+                <SettingRow
+                  title={t('backgroundImage')}
+                  description={t('backgroundImageDesc')}
+                  control={
+                    <div className="w-full min-w-[200px] md:max-w-xl">
+                      {form.backgroundImage?.dataUrl ? (
+                        <div className="space-y-3">
+                          <div
+                            className="h-20 w-full rounded-xl border border-ds-border bg-cover bg-center shadow-sm"
+                            style={{
+                              backgroundImage: `url(${form.backgroundImage.dataUrl})`,
+                              filter: form.backgroundImage.blur ? `blur(${form.backgroundImage.blur}px)` : undefined
+                            }}
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleBackgroundImageSelect}
+                              className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] font-medium text-ds-ink shadow-sm transition hover:bg-ds-hover"
+                            >
+                              {t('backgroundImageChange')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleBackgroundImageClear}
+                              className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] font-medium text-ds-ink shadow-sm transition hover:bg-ds-hover"
+                            >
+                              {t('backgroundImageClear')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex h-20 w-full items-center justify-center rounded-xl border border-dashed border-ds-border bg-ds-subtle text-[13px] text-ds-muted">
+                            {t('backgroundImageNoFile')}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleBackgroundImageSelect}
+                            className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] font-medium text-ds-ink shadow-sm transition hover:bg-ds-hover"
+                          >
+                            {t('backgroundImageSelect')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  }
+                />
+                {form.backgroundImage?.dataUrl ? (
+                  <>
+                    <SettingRow
+                      title={t('backgroundImageOpacity')}
+                      description={t('backgroundImageOpacityDesc')}
+                      control={
+                        <input
+                          type="range"
+                          min="0.02"
+                          max="0.6"
+                          step="0.01"
+                          value={String(form.backgroundImage.opacity)}
+                          onChange={(e) => handleBackgroundImageOpacityChange(Number(e.target.value))}
+                          className="w-full md:max-w-xs"
+                        />
+                      }
+                    />
+                    <SettingRow
+                      title={t('backgroundImageBlur')}
+                      description={t('backgroundImageBlurDesc')}
+                      control={
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="1"
+                          value={String(form.backgroundImage.blur)}
+                          onChange={(e) => handleBackgroundImageBlurChange(Number(e.target.value))}
+                          className="w-full md:max-w-xs"
+                        />
+                      }
+                    />
+                  </>
+                ) : null}
               </SettingsCard>
 
               <SettingsCard title={t('desktopBehavior')} className="mt-6">

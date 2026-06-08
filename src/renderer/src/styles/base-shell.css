@@ -519,6 +519,15 @@ body::after {
   opacity: 0.75;
 }
 
+/* custom background image — style tag injected at runtime handles the rest */
+body.custom-bg-enabled {
+  background-color: transparent !important;
+}
+
+body.custom-bg-enabled::after {
+  display: none !important;
+}
+
 button,
 input,
 select,

@@ -5,6 +5,7 @@ import {
   DEFAULT_WRITE_INLINE_COMPLETION_BASE_URL,
   kunSettingsPatch,
   DEFAULT_WRITE_WORKSPACE_ROOT,
+  DEFAULT_BACKGROUND_IMAGE_SETTINGS,
   type AppSettingsPatch,
   getActiveAgentApiKey,
   getKunRuntimeSettings,
@@ -24,6 +25,7 @@ import type {
 } from '../agent/kun-contract'
 import type { WriteInlineCompletionDebugEntry } from '@shared/write-inline-completion'
 import { applyTheme, applyUiFontScale } from '../lib/apply-theme'
+import { setBackgroundImage } from './BackgroundLayer'
 import { formatWorkspacePickerError } from '../lib/format-workspace-picker-error'
 import {
   joinFsPath,
@@ -678,6 +680,69 @@ export function SettingsView(): ReactElement {
     update({ claw: { im: { workspaceRoot: '' } } })
   }
 
+  const handleBackgroundImageSelect = (): void => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = (): void => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      const img = new Image()
+      img.onload = (): void => {
+        const MAX_WIDTH = 1920
+        let { width, height } = img
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width)
+          width = MAX_WIDTH
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, width, height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+
+        const bg = {
+          dataUrl,
+          opacity: form?.backgroundImage?.opacity ?? DEFAULT_BACKGROUND_IMAGE_SETTINGS.opacity,
+          blur: form?.backgroundImage?.blur ?? DEFAULT_BACKGROUND_IMAGE_SETTINGS.blur
+        }
+        setBackgroundImage(bg)
+        update({ backgroundImage: bg })
+      }
+      img.src = URL.createObjectURL(file)
+    }
+    input.click()
+  }
+
+  const handleBackgroundImageClear = (): void => {
+    const bg = {
+      dataUrl: '',
+      opacity: DEFAULT_BACKGROUND_IMAGE_SETTINGS.opacity,
+      blur: DEFAULT_BACKGROUND_IMAGE_SETTINGS.blur
+    }
+    setBackgroundImage(bg)
+    update({ backgroundImage: bg })
+  }
+
+  const handleBackgroundImageOpacityChange = (opacity: number): void => {
+    const currentDataUrl = form?.backgroundImage?.dataUrl ?? ''
+    const currentBlur = form?.backgroundImage?.blur ?? DEFAULT_BACKGROUND_IMAGE_SETTINGS.blur
+    const bg = { dataUrl: currentDataUrl, opacity, blur: currentBlur }
+    setBackgroundImage(bg)
+    update({ backgroundImage: bg })
+  }
+
+  const handleBackgroundImageBlurChange = (blur: number): void => {
+    const currentDataUrl = form?.backgroundImage?.dataUrl ?? ''
+    const currentOpacity = form?.backgroundImage?.opacity ?? DEFAULT_BACKGROUND_IMAGE_SETTINGS.opacity
+    const bg = { dataUrl: currentDataUrl, opacity: currentOpacity, blur }
+    setBackgroundImage(bg)
+    update({ backgroundImage: bg })
+  }
+
   const clearWriteDebugEntries = async (): Promise<void> => {
     setWriteDebugLoading(true)
     setWriteDebugError(null)
@@ -777,7 +842,11 @@ export function SettingsView(): ReactElement {
     resetClawWorkspaceToDefault,
     clawWorkspacePickerError,
     splitSettingsList,
-    listSettingsText
+    listSettingsText,
+    handleBackgroundImageSelect,
+    handleBackgroundImageClear,
+    handleBackgroundImageOpacityChange,
+    handleBackgroundImageBlurChange
   }
 
   return (

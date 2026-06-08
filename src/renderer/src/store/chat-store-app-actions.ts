@@ -1,6 +1,7 @@
 import type i18next from 'i18next'
 import type { AppSettingsV1 } from '@shared/app-settings'
 import { rendererRuntimeClient } from '../agent/runtime-client'
+import { setBackgroundImage } from '../components/BackgroundLayer'
 import type { ChatState, ChatStoreGet, ChatStoreSet, InitialSetupMode, PluginHostRoute, SettingsRouteSection } from './chat-store-types'
 
 type CreateAppActionsOptions = {
@@ -127,6 +128,9 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
       const workspaceRoot = normalizeWorkspaceRoot(settings.workspaceRoot)
       applyTheme(settings.theme)
       applyUiFontScale(settings.uiFontScale)
+      if (settings.backgroundImage?.dataUrl) {
+        setBackgroundImage(settings.backgroundImage)
+      }
       set({
         workspaceRoot,
         workspaceLabel: workspaceLabelFromPath(workspaceRoot),

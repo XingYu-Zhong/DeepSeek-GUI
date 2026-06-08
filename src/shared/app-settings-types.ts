@@ -27,6 +27,12 @@ export const SCHEDULE_MODEL_IDS = CLAW_MODEL_IDS
 export const DEFAULT_SCHEDULE_REASONING_EFFORT = 'medium'
 export const SCHEDULE_REASONING_EFFORT_IDS = ['off', 'low', 'medium', 'high', 'max'] as const
 export const DEFAULT_SCHEDULE_INTERNAL_PORT = 8788
+export const DEFAULT_BACKGROUND_IMAGE_SETTINGS: BackgroundImageSettingsV1 = {
+  dataUrl: '',
+  opacity: 0.15,
+  blur: 0
+}
+
 export const DEFAULT_WRITE_WORKSPACE_ROOT = '~/.deepseekgui/write_workspace'
 export const DEFAULT_KUN_DATA_DIR = '~/.deepseekgui/kun'
 export const DEFAULT_KUN_MODEL = 'deepseek-v4-pro'
@@ -440,11 +446,21 @@ export type GuiUpdateConfigV1 = {
   channel: GuiUpdateChannel
 }
 
+export type BackgroundImageSettingsV1 = {
+  /** Base64 data URL of the background image, empty string means no custom background. */
+  dataUrl: string
+  /** Opacity of the background image (0.0 – 1.0). */
+  opacity: number
+  /** Blur amount in pixels (0 = no blur). */
+  blur: number
+}
+
 export type AppSettingsV1 = {
   version: 1
   locale: 'en' | 'zh'
   theme: 'system' | 'light' | 'dark'
   uiFontScale: UiFontScale
+  backgroundImage?: BackgroundImageSettingsV1
   provider: ModelProviderSettingsV1
   agents: KunSettingsEnvelopeV1
   workspaceRoot: string
@@ -457,9 +473,12 @@ export type AppSettingsV1 = {
   guiUpdate: GuiUpdateConfigV1
 }
 
+export type BackgroundImageSettingsPatchV1 = Partial<BackgroundImageSettingsV1>
+
 export type AppSettingsPatch = Partial<
   Omit<AppSettingsV1, 'provider' | 'agents' | 'log' | 'notifications' | 'appBehavior' | 'write' | 'claw' | 'schedule' | 'guiUpdate'>
 > & {
+  backgroundImage?: BackgroundImageSettingsPatchV1
   provider?: ModelProviderSettingsPatchV1
   agents?: KunSettingsEnvelopePatchV1
   log?: Partial<LogConfigV1>

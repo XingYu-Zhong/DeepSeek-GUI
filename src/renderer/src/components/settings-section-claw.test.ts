@@ -65,6 +65,7 @@ function buildSettings(): AppSettingsV1 {
     write: defaultWriteSettings(),
     claw: defaultClawSettings(),
     schedule: defaultScheduleSettings(),
+    backgroundImage: { dataUrl: '', opacity: 0.15, blur: 0 },
     guiUpdate: { channel: 'stable' }
   }
   settings.claw.enabled = true

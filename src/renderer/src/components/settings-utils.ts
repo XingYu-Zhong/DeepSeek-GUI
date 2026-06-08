@@ -15,6 +15,7 @@ import {
   normalizeModelProviderSettings,
   normalizeScheduleSettings,
   normalizeWriteSettings,
+  DEFAULT_BACKGROUND_IMAGE_SETTINGS,
   type AppSettingsPatch,
   type AppSettingsV1
 } from '@shared/app-settings'
@@ -43,10 +44,13 @@ export function hasValidPort(settings: AppSettingsV1): boolean {
 
 export function mergeSettings(current: AppSettingsV1, patch: SettingsPatch): AppSettingsV1 {
   const safeCurrent = coerceRendererSettings(current)
-  const { agents: agentsPatch, provider: providerPatch, ...restPatch } = patch
+  const { agents: agentsPatch, provider: providerPatch, backgroundImage: bgPatch, ...restPatch } = patch
   return {
     ...applyKunRuntimePatch(safeCurrent, agentsPatch?.kun),
     ...restPatch,
+    backgroundImage: bgPatch
+      ? { ...safeCurrent.backgroundImage, ...bgPatch }
+      : safeCurrent.backgroundImage,
     provider: mergeModelProviderSettings(safeCurrent.provider, providerPatch),
     log: {
       ...safeCurrent.log,
@@ -85,6 +89,11 @@ export function coerceRendererSettings(settings: AppSettingsV1): AppSettingsV1 {
     locale: raw.locale === 'zh' ? 'zh' : 'en',
     theme,
     uiFontScale,
+    backgroundImage: {
+      dataUrl: typeof raw.backgroundImage?.dataUrl === 'string' ? raw.backgroundImage.dataUrl : DEFAULT_BACKGROUND_IMAGE_SETTINGS.dataUrl,
+      opacity: typeof raw.backgroundImage?.opacity === 'number' ? raw.backgroundImage.opacity : DEFAULT_BACKGROUND_IMAGE_SETTINGS.opacity,
+      blur: typeof raw.backgroundImage?.blur === 'number' ? raw.backgroundImage.blur : DEFAULT_BACKGROUND_IMAGE_SETTINGS.blur
+    },
     provider: normalizeModelProviderSettings(raw.provider),
     agents: kunSettingsEnvelope(mergeKunRuntimeSettings(defaultKunRuntimeSettings(), getKunRuntimeSettings(settings))),
     workspaceRoot: typeof raw.workspaceRoot === 'string' ? raw.workspaceRoot : DEFAULT_WORKSPACE_ROOT,
