@@ -872,10 +872,13 @@ app.whenReady().then(async () => {
   traceStartup('ipc registration:start')
   const applySettingsPatch = async (partial: AppSettingsPatch): Promise<AppSettingsV1> => {
     const prev = await store.load()
-    const { agents: agentsPatch, provider: providerPatch, ...restPatch } = partial
+    const { agents: agentsPatch, provider: providerPatch, ssh: sshPatch, ...restPatch } = partial
     const next = normalizeAppSettings({
       ...applyKunRuntimePatch(prev, agentsPatch?.kun),
       ...restPatch,
+      ssh: sshPatch
+        ? { ...prev.ssh, ...sshPatch }
+        : prev.ssh,
       provider: mergeModelProviderSettings(prev.provider, providerPatch),
       log: { ...prev.log, ...(partial.log ?? {}) },
       notifications: { ...prev.notifications, ...(partial.notifications ?? {}) },

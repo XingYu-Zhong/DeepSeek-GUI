@@ -123,6 +123,15 @@ export type SseEventPayload = { streamId: string; data: unknown }
 export type SseEndPayload = { streamId: string }
 export type SseErrorPayload = { streamId: string; status?: number; message?: string }
 
+// Terminal API types
+export type TerminalCreatePayload = { cwd?: string; cols?: number; rows?: number }
+export type TerminalCreateResult = { ok: true; id: string } | { ok: false; message: string }
+export type TerminalWritePayload = { id: string; data: string }
+export type TerminalResizePayload = { id: string; cols: number; rows: number }
+export type TerminalDestroyPayload = { id: string }
+export type TerminalDataEvent = { id: string; data: string }
+export type TerminalExitEvent = { id: string; code: number }
+
 export type DsGuiApi = {
   platform: string
   getSettings: () => Promise<AppSettingsV1>
@@ -222,4 +231,10 @@ export type DsGuiApi = {
   logError: (category: string, message: string, detail?: unknown) => Promise<void>
   getLogPath: () => Promise<string>
   openLogDir: () => Promise<{ ok: boolean; message?: string }>
+  createTerminal: (payload: TerminalCreatePayload) => Promise<TerminalCreateResult>
+  writeToTerminal: (payload: TerminalWritePayload) => Promise<{ ok: boolean; message?: string }>
+  resizeTerminal: (payload: TerminalResizePayload) => Promise<{ ok: boolean; message?: string }>
+  destroyTerminal: (payload: TerminalDestroyPayload) => Promise<{ ok: boolean; message?: string }>
+  onTerminalData: (handler: (payload: TerminalDataEvent) => void) => () => void
+  onTerminalExit: (handler: (payload: TerminalExitEvent) => void) => () => void
 }

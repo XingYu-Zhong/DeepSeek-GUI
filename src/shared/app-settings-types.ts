@@ -28,6 +28,9 @@ export const SCHEDULE_MODEL_IDS = CLAW_MODEL_IDS
 export const DEFAULT_SCHEDULE_REASONING_EFFORT = 'medium'
 export const SCHEDULE_REASONING_EFFORT_IDS = ['off', 'low', 'medium', 'high', 'max'] as const
 export const DEFAULT_SCHEDULE_INTERNAL_PORT = 8788
+export const DEFAULT_SSH_PORT = 22
+export const DEFAULT_SSH_SETTINGS: SshSettingsV1 = { profiles: [] }
+
 export const DEFAULT_WRITE_WORKSPACE_ROOT = '~/.deepseekgui/write_workspace'
 export const DEFAULT_KUN_DATA_DIR = '~/.deepseekgui/kun'
 export const DEFAULT_KUN_MODEL = 'deepseek-v4-pro'
@@ -441,11 +444,26 @@ export type GuiUpdateConfigV1 = {
   channel: GuiUpdateChannel
 }
 
+export type SshProfileV1 = {
+  id: string
+  name: string
+  host: string
+  port: number
+  user: string
+  keyPath: string
+  createdAt: string
+}
+
+export type SshSettingsV1 = {
+  profiles: SshProfileV1[]
+}
+
 export type AppSettingsV1 = {
   version: 1
   locale: 'en' | 'zh'
   theme: 'system' | 'light' | 'dark'
   uiFontScale: UiFontScale
+  ssh?: SshSettingsV1
   provider: ModelProviderSettingsV1
   agents: KunSettingsEnvelopeV1
   workspaceRoot: string

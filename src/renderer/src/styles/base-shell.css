@@ -535,8 +535,8 @@ textarea {
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 *::-webkit-scrollbar-track {
@@ -544,7 +544,7 @@ textarea {
 }
 
 *::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--ds-scrollbar-thumb);
   background-clip: padding-box;
@@ -553,6 +553,13 @@ textarea {
 *::-webkit-scrollbar-thumb:hover {
   background: var(--ds-scrollbar-thumb-hover);
   background-clip: padding-box;
+}
+
+/* Hide scrollbar in chat area — keep scroll functionality */
+.ds-chat-stage ::-webkit-scrollbar,
+.ds-stage-surface ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .ds-shell {

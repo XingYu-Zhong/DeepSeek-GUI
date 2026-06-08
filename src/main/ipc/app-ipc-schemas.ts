@@ -483,6 +483,17 @@ const settingsPatchObjectSchema = z.object({
   locale: localeSchema.optional(),
   theme: themeSchema.optional(),
   uiFontScale: uiFontScaleSchema.optional(),
+  ssh: z.object({
+    profiles: z.array(z.object({
+      id: z.string().max(128),
+      name: z.string().max(256),
+      host: z.string().max(512),
+      port: z.number().int().min(1).max(65535),
+      user: z.string().max(256),
+      keyPath: z.string().max(2048),
+      createdAt: z.string().max(128)
+    })).max(100).optional()
+  }).strict().optional(),
   provider: modelProviderPatchSchema.optional(),
   agents: z.object({
     kun: kunRuntimePatchSchema.optional()
@@ -785,3 +796,32 @@ export const sseStartPayloadSchema = z
   .strict()
 
 export const streamIdSchema = trimmedString(MAX_ID_LENGTH)
+
+export const terminalCreatePayloadSchema = z
+  .object({
+    cwd: z.string().max(MAX_PATH_LENGTH).optional(),
+    cols: z.number().int().min(1).max(1000).optional(),
+    rows: z.number().int().min(1).max(500).optional()
+  })
+  .strict()
+
+export const terminalWritePayloadSchema = z
+  .object({
+    id: trimmedString(64),
+    data: z.string().max(65536)
+  })
+  .strict()
+
+export const terminalResizePayloadSchema = z
+  .object({
+    id: trimmedString(64),
+    cols: z.number().int().min(1).max(1000),
+    rows: z.number().int().min(1).max(500)
+  })
+  .strict()
+
+export const terminalDestroyPayloadSchema = z
+  .object({
+    id: trimmedString(64)
+  })
+  .strict()

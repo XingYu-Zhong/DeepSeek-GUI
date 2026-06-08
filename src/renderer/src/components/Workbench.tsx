@@ -5,13 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { parseClawCommand } from '@shared/claw-commands'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '@shared/default-composer-models'
 import { buildGuiPlanId, buildPlanRelativePath } from '@shared/gui-plan'
-import {
-  findKeyboardShortcutCommand,
-  keyboardEventToShortcut,
-  resolveKeyboardShortcutBindings,
-  type KeyboardShortcutCommandId
-} from '@shared/keyboard-shortcuts'
-import type { DesktopCommand, SkillListItem } from '@shared/ds-gui-api'
+import type { SkillListItem } from '@shared/ds-gui-api'
 import type { ClipboardImageReadResult } from '@shared/workspace-file'
 import type { AttachmentReference, ChatBlock } from '../agent/types'
 import type { CoreRuntimeInfoJson, CoreRuntimeSkillJson } from '../agent/kun-contract'
@@ -61,7 +55,6 @@ import { useWorkbenchPlanController } from './workbench-plan-controller'
 import { prepareImageAttachmentUpload } from '../lib/image-attachment-upload'
 import { isChatAttachmentUploadEnabled } from '../lib/attachment-upload-availability'
 import { normalizeWorkspaceRoot } from '../lib/workspace-path'
-import { useKeyboardShortcutSettings } from '../lib/keyboard-shortcut-settings'
 import {
   buildComposerFileContextPrompt,
   mergeComposerFileReferences,
@@ -91,6 +84,12 @@ const TodoPanel = lazy(() =>
 const ScheduleTasksView = lazy(() =>
   import('./schedule/ScheduleTasksView').then((module) => ({ default: module.ScheduleTasksView }))
 )
+const TerminalPanel = lazy(() =>
+  import('./TerminalPanel').then((module) => ({ default: module.TerminalPanel }))
+)
+const KunOutputPanel = lazy(() =>
+  import('./KunOutputPanel').then((module) => ({ default: module.KunOutputPanel }))
+)
 
 type PendingSddPlanTarget = {
   planId: string
@@ -100,23 +99,6 @@ type PendingSddPlanTarget = {
 
 const COMPOSER_FILE_CONTEXT_MAX_CHARS_PER_FILE = 60_000
 const COMPOSER_FILE_CONTEXT_MAX_TOTAL_CHARS = 180_000
-const DESKTOP_SHORTCUT_COMMANDS: Partial<Record<KeyboardShortcutCommandId, DesktopCommand>> = {
-  quit: 'quit',
-  undo: 'undo',
-  redo: 'redo',
-  cut: 'cut',
-  copy: 'copy',
-  paste: 'paste',
-  'select-all': 'selectAll',
-  reload: 'reload',
-  'zoom-in': 'zoomIn',
-  'zoom-out': 'zoomOut',
-  'reset-zoom': 'resetZoom',
-  'toggle-devtools': 'toggleDevTools',
-  close: 'close',
-  minimize: 'minimize',
-  'toggle-maximize': 'toggleMaximize'
-}
 
 function fileNameFromPath(path: string): string {
   return path.replaceAll('\\', '/').split('/').filter(Boolean).pop() || 'image'
@@ -228,7 +210,6 @@ export function Workbench(): ReactElement {
     liveReasoning,
     liveAssistant,
     error,
-    runtimeErrorDetail,
     busy,
     route,
     pluginHostRoute,
@@ -284,7 +265,6 @@ export function Workbench(): ReactElement {
       liveReasoning: s.liveReasoning,
       liveAssistant: s.liveAssistant,
       error: s.error,
-      runtimeErrorDetail: s.runtimeErrorDetail,
       busy: s.busy,
       route: s.route,
       pluginHostRoute: s.pluginHostRoute,
@@ -341,7 +321,6 @@ export function Workbench(): ReactElement {
   const [attachmentUploadBusy, setAttachmentUploadBusy] = useState(false)
   const [attachmentUploadError, setAttachmentUploadError] = useState<string | null>(null)
   const [connectPhoneSidebarOpen, setConnectPhoneSidebarOpen] = useState(false)
-  const [runtimeLogPath, setRuntimeLogPath] = useState('')
   const writeAssistantOpen = useWriteWorkspaceStore((s) => s.assistantOpen)
   const setWriteAssistantOpen = useWriteWorkspaceStore((s) => s.setAssistantOpen)
   const writeAssistantModel = useWriteWorkspaceStore((s) => s.assistantModel)
@@ -363,11 +342,6 @@ export function Workbench(): ReactElement {
     return [...ordered]
   }, [composerPickList, writeAssistantModel])
   const stageInsetClass = 'ds-stage-inset'
-  const keyboardShortcuts = useKeyboardShortcutSettings()
-  const keyboardShortcutBindings = useMemo(
-    () => resolveKeyboardShortcutBindings(keyboardShortcuts),
-    [keyboardShortcuts]
-  )
 
   const draftByThread = useRef<Record<string, string>>({})
   const prevThreadId = useRef<string | null>(null)
@@ -466,76 +440,9 @@ export function Workbench(): ReactElement {
       await useChatStore.getState().refreshThreads()
     }
   })
-
-  useEffect(() => {
-    const runDesktopShortcut = (command: DesktopCommand): void => {
-      if (typeof window.dsGui?.runDesktopCommand !== 'function') return
-      void window.dsGui.runDesktopCommand(command)
-    }
-
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat || event.isComposing) return
-      const commandId = findKeyboardShortcutCommand(
-        keyboardShortcutBindings,
-        keyboardEventToShortcut(event)
-      )
-      if (!commandId) return
-      event.preventDefault()
-
-      if (commandId === 'toggle-plan-mode') {
-        if (mode === 'plan') {
-          setMode('agent')
-        } else {
-          setMode('plan')
-          void handleGuiPlanCommand()
-        }
-        return
-      }
-      if (commandId === 'new-chat') {
-        void createThread()
-        return
-      }
-      if (commandId === 'choose-workspace') {
-        void chooseWorkspace()
-        return
-      }
-      if (commandId === 'settings') {
-        openSettings()
-        return
-      }
-
-      const desktopCommand = DESKTOP_SHORTCUT_COMMANDS[commandId]
-      if (desktopCommand) runDesktopShortcut(desktopCommand)
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [
-    chooseWorkspace,
-    createThread,
-    handleGuiPlanCommand,
-    keyboardShortcutBindings,
-    mode,
-    openSettings,
-    setMode
-  ])
   const showDevPreviewCard =
     route === 'chat' &&
     latestDevPreviewUrl !== null
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.dsGui?.getLogPath !== 'function') return
-    let cancelled = false
-    void window.dsGui
-      .getLogPath()
-      .then((path) => {
-        if (!cancelled) setRuntimeLogPath(path)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   useEffect(() => {
     const previousThreadId = prevThreadId.current
@@ -1351,19 +1258,12 @@ export function Workbench(): ReactElement {
     void createWriteThread(writeWorkspaceRoot)
   }
 
-  const renderRuntimeBanner = (message: string, detail?: string | null): ReactElement => (
+  const renderRuntimeBanner = (message: string): ReactElement => (
     <RuntimeBanner
       message={message}
-      detail={detail}
-      logPath={runtimeLogPath || null}
       runtimeReady={runtimeConnection === 'ready'}
       stageInsetClass={stageInsetClass}
       t={t}
-      onOpenLogDir={
-        typeof window !== 'undefined' && typeof window.dsGui?.openLogDir === 'function'
-          ? () => window.dsGui.openLogDir()
-          : undefined
-      }
       onOpenSettings={() => openSettings('agents')}
       onRetryConnection={() => void probeRuntime('user')}
     />
@@ -1474,6 +1374,17 @@ export function Workbench(): ReactElement {
                 onCollapse={closeRightPanel}
                 onBuildPlan={() => void buildGuiPlan()}
               />
+            ) : rightPanelMode === 'terminal' ? (
+              <TerminalPanel
+                workspaceRoot={workspaceRoot}
+                className="h-full max-h-full w-full"
+                onCollapse={closeRightPanel}
+              />
+            ) : rightPanelMode === 'output' ? (
+              <KunOutputPanel
+                className="h-full max-h-full w-full"
+                onCollapse={closeRightPanel}
+              />
             ) : (
               <WorkspaceFilePreviewPanel
                 target={filePreviewTarget}
@@ -1573,7 +1484,7 @@ export function Workbench(): ReactElement {
           </Suspense>
         ) : route === 'write' ? (
           <>
-            {writeRuntimeBannerMessage ? renderRuntimeBanner(writeRuntimeBannerMessage, runtimeErrorDetail) : null}
+            {writeRuntimeBannerMessage ? renderRuntimeBanner(writeRuntimeBannerMessage) : null}
             <div className="flex min-h-0 flex-1">
               <WriteWorkspaceView
                 leftSidebarCollapsed={leftSidebarCollapsed}
@@ -1587,7 +1498,7 @@ export function Workbench(): ReactElement {
           </>
         ) : (
           <>
-        {error && !(runtimeConnection !== 'ready' && !activeThreadId) ? renderRuntimeBanner(error, runtimeErrorDetail) : null}
+        {error && !(runtimeConnection !== 'ready' && !activeThreadId) ? renderRuntimeBanner(error) : null}
 
         <div className="flex min-h-0 flex-1">
           <div className={`flex min-h-0 min-w-0 flex-1 ${activeSddDraft ? '' : stageInsetClass}`}>
@@ -1646,7 +1557,6 @@ export function Workbench(): ReactElement {
               live={timelineLiveAssistant}
               activeThreadId={activeThreadId}
               runtimeConnection={runtimeConnection}
-              runtimeError={error}
               onRetryConnection={() => void probeRuntime('user')}
               onOpenSettings={() => openSettings('agents')}
               onSelectSuggestion={(text) => setInput(text)}

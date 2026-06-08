@@ -4,6 +4,11 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
+import * as os from 'node:os'
+import { homedir } from 'node:os'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ptyMod = require('node-pty') as typeof import('node-pty')
+const ptySpawn = ptyMod.spawn.bind(ptyMod)
 import {
   type AppSettingsPatch,
   type AppSettingsV1,
@@ -45,6 +50,10 @@ import {
   skillSaveFilePayloadSchema,
   settingsPatchSchema,
   streamIdSchema,
+  terminalCreatePayloadSchema,
+  terminalDestroyPayloadSchema,
+  terminalResizePayloadSchema,
+  terminalWritePayloadSchema,
   workspaceDirectoryCreatePayloadSchema,
   workspaceClipboardImageSavePayloadSchema,
   workspaceDirectoryTargetPayloadSchema,
@@ -116,7 +125,6 @@ type RegisterAppIpcHandlersOptions = {
   startWeixinInstallQrcode: (weixinBridgeUrl?: string) => Promise<ClawImInstallQrResult>
   pollWeixinInstall: (deviceCode: string, weixinBridgeUrl?: string) => Promise<ClawImInstallPollResult>
   resolveKunConfigPath: () => string
-  onKunMcpConfigWritten?: (path: string, content: string) => Promise<void> | void
   showTurnCompleteNotification: (
     payload: TurnCompleteNotificationPayload
   ) => Promise<SystemNotificationResult>
@@ -134,20 +142,6 @@ function parseIpcPayload<T>(channel: string, schema: z.ZodType<T>, payload: unkn
   throw new Error(`Invalid payload for ${channel}: ${issue?.message ?? 'Bad request.'}`)
 }
 
-function validateMcpConfigContent(content: string): void {
-  const trimmed = content.trim()
-  if (!trimmed) return
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(trimmed) as unknown
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`MCP config must be JSON: ${message}`)
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('MCP config must be a JSON object.')
-  }
-}
 
 function runDesktopCommand(
   command: DesktopCommand,
@@ -225,7 +219,6 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     startWeixinInstallQrcode,
     pollWeixinInstall,
     resolveKunConfigPath,
-    onKunMcpConfigWritten,
     showTurnCompleteNotification,
     getAppVersion,
     readGuiUpdateState,
@@ -544,17 +537,8 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       content
     )
     const path = resolveKunConfigPath()
-    validateMcpConfigContent(validatedContent)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, validatedContent, 'utf8')
-    try {
-      await onKunMcpConfigWritten?.(path, validatedContent)
-    } catch (error: unknown) {
-      logError('mcp-config', 'Failed to apply MCP config change after write', {
-        path,
-        message: error instanceof Error ? error.message : String(error)
-      })
-    }
     return { ok: true as const, path }
   })
 
@@ -787,6 +771,76 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     }
     const error = await shell.openPath(dir)
     if (error) return { ok: false, message: error }
+    return { ok: true }
+  })
+
+  // ---- Terminal IPC handlers ----
+  const terminalSessions = new Map<string, { term: any; sender: WebContents }>()
+
+  ipcMain.handle('terminal:create', async (event, payload: unknown) => {
+    const parsed = parseIpcPayload('terminal:create', terminalCreatePayloadSchema, payload)
+    const id = randomUUID()
+    const shellPath = process.env.SHELL || os.userInfo().shell || '/bin/zsh'
+    const shellArgs = os.platform() === 'win32' ? [] : ['-l']
+    const cwd = parsed.cwd ? expandHomePath(parsed.cwd) : homedir()
+
+    try {
+      const term = ptySpawn(shellPath, shellArgs, {
+        name: 'xterm-256color',
+        cols: parsed.cols ?? 80,
+        rows: parsed.rows ?? 24,
+        cwd,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          ZSH_EOL_MARK: '' // suppress zsh % on partial lines
+        }
+      })
+      terminalSessions.set(id, { term, sender: event.sender })
+      term.onData((data: string) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('terminal:data', { id, data })
+        }
+      })
+      term.onExit(({ exitCode }: { exitCode: number }) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('terminal:exit', { id, code: exitCode })
+        }
+        terminalSessions.delete(id)
+      })
+      // Suppress zsh % partial-line marker permanently
+      if (shellPath.includes('zsh')) {
+        term.write('export PROMPT_EOL_MARK=\'\'\n')
+      }
+      return { ok: true, id }
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  ipcMain.handle('terminal:write', async (event, payload: unknown) => {
+    const parsed = parseIpcPayload('terminal:write', terminalWritePayloadSchema, payload)
+    const session = terminalSessions.get(parsed.id)
+    if (!session) return { ok: false, message: 'Terminal session not found' }
+    session.term.write(parsed.data)
+    return { ok: true }
+  })
+
+  ipcMain.handle('terminal:resize', async (event, payload: unknown) => {
+    const parsed = parseIpcPayload('terminal:resize', terminalResizePayloadSchema, payload)
+    const session = terminalSessions.get(parsed.id)
+    if (!session) return { ok: false, message: 'Terminal session not found' }
+    session.term.resize(parsed.cols, parsed.rows)
+    return { ok: true }
+  })
+
+  ipcMain.handle('terminal:destroy', async (event, payload: unknown) => {
+    const parsed = parseIpcPayload('terminal:destroy', terminalDestroyPayloadSchema, payload)
+    const session = terminalSessions.get(parsed.id)
+    if (session) {
+      try { session.term.kill() } catch {}
+      terminalSessions.delete(parsed.id)
+    }
     return { ok: true }
   })
 }

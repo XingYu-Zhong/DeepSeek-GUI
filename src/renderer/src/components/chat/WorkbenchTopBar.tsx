@@ -17,12 +17,13 @@ import {
   Loader2,
   MessageCircleMore,
   RefreshCw,
-  Terminal
+  Terminal,
+  Monitor
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { readPreferredEditorId, writePreferredEditorId } from '../../lib/editor-preferences'
 
-export type RightPanelMode = 'todo' | 'changes' | 'browser' | 'file' | 'plan' | 'sdd-ai' | null
+export type RightPanelMode = 'todo' | 'changes' | 'browser' | 'file' | 'plan' | 'sdd-ai' | 'terminal' | 'output' | null
 
 type Props = {
   rightPanelMode: RightPanelMode
@@ -57,7 +58,9 @@ export function WorkbenchTopBar({
     { mode: 'todo' as const, label: t('rightPanelTodo'), icon: ListTodo },
     ...(planPanelEnabled ? [{ mode: 'plan' as const, label: t('rightPanelPlan'), icon: ClipboardList }] : []),
     { mode: 'changes' as const, label: t('rightPanelChanges'), icon: FileEdit },
-    { mode: 'browser' as const, label: t('rightPanelBrowser'), icon: Globe2 }
+    { mode: 'browser' as const, label: t('rightPanelBrowser'), icon: Globe2 },
+    { mode: 'output' as const, label: 'Output', icon: Monitor },
+    { mode: 'terminal' as const, label: 'Terminal', icon: Terminal }
   ]
   const selectedEditor = useMemo(
     () => editors.find((editor) => editor.id === selectedEditorId) ?? editors[0],

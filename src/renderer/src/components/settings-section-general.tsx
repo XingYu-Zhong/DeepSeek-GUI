@@ -92,7 +92,11 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
     resetClawWorkspaceToDefault,
     clawWorkspacePickerError,
     splitSettingsList,
-    listSettingsText
+    listSettingsText,
+    sshProfiles,
+    addSshProfile,
+    updateSshProfile,
+    deleteSshProfile
   } = ctx
   const platform = typeof window !== 'undefined' ? window.dsGui?.platform ?? '' : ''
   const openAtLoginSupported = platform === 'win32' || platform === 'darwin'
@@ -326,6 +330,46 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
                       onInstall={installGuiUpdate}
                       t={t}
                     />
+                  }
+                />
+              </SettingsCard>
+
+              <SettingsCard title="SSH Connections" className="mt-6">
+                <SettingRow
+                  title="SSH Profiles"
+                  description="Configure SSH connections for the built-in terminal."
+                  wideControl
+                  control={
+                    <div className="w-full min-w-0 space-y-3">
+                      {(!sshProfiles || sshProfiles.length === 0) ? (
+                        <p className="text-[13px] text-ds-muted">No SSH profiles configured.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {sshProfiles.map((profile: any) => (
+                            <div key={profile.id} className="flex items-center gap-2 rounded-xl border border-ds-border bg-ds-card px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[13px] font-medium text-ds-ink truncate">{profile.name}</div>
+                                <div className="text-[11px] text-ds-muted">{profile.user}@{profile.host}:{profile.port}</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => deleteSshProfile(profile.id)}
+                                className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={addSshProfile}
+                        className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] font-medium text-ds-ink shadow-sm transition hover:bg-ds-hover"
+                      >
+                        + Add SSH Profile
+                      </button>
+                    </div>
                   }
                 />
               </SettingsCard>

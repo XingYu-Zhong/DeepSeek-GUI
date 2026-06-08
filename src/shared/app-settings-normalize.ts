@@ -75,6 +75,9 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
         maybeSettings.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL
       )
     },
+    ssh: {
+      profiles: Array.isArray(maybeSettings.ssh?.profiles) ? maybeSettings.ssh.profiles : []
+    },
     codePromptPrefix: typeof maybeSettings.codePromptPrefix === 'string' ? maybeSettings.codePromptPrefix : ''
   }
 }

@@ -785,7 +785,32 @@ export function SettingsView(): ReactElement {
     resetClawWorkspaceToDefault,
     clawWorkspacePickerError,
     splitSettingsList,
-    listSettingsText
+    listSettingsText,
+    sshProfiles: form?.ssh?.profiles ?? [],
+    addSshProfile: () => {
+      const profiles = [...(form?.ssh?.profiles ?? [])]
+      const id = crypto.randomUUID()
+      profiles.push({
+        id,
+        name: `Server ${profiles.length + 1}`,
+        host: '',
+        port: 22,
+        user: '',
+        keyPath: '',
+        createdAt: new Date().toISOString()
+      })
+      update({ ssh: { profiles } })
+    },
+    updateSshProfile: (id: string, patch: { name?: string; host?: string; port?: number; user?: string; keyPath?: string }) => {
+      const profiles = (form?.ssh?.profiles ?? []).map((p: any) =>
+        p.id === id ? { ...p, ...patch } : p
+      )
+      update({ ssh: { profiles } })
+    },
+    deleteSshProfile: (id: string) => {
+      const profiles = (form?.ssh?.profiles ?? []).filter((p: any) => p.id !== id)
+      update({ ssh: { profiles } })
+    }
   }
 
   return (

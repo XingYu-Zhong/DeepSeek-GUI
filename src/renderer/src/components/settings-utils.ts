@@ -44,10 +44,13 @@ export function hasValidPort(settings: AppSettingsV1): boolean {
 
 export function mergeSettings(current: AppSettingsV1, patch: SettingsPatch): AppSettingsV1 {
   const safeCurrent = coerceRendererSettings(current)
-  const { agents: agentsPatch, provider: providerPatch, ...restPatch } = patch
+  const { agents: agentsPatch, provider: providerPatch, ssh: sshPatch, ...restPatch } = patch
   return {
     ...applyKunRuntimePatch(safeCurrent, agentsPatch?.kun),
     ...restPatch,
+    ssh: sshPatch
+      ? { ...safeCurrent.ssh, ...sshPatch }
+      : safeCurrent.ssh,
     provider: mergeModelProviderSettings(safeCurrent.provider, providerPatch),
     log: {
       ...safeCurrent.log,
@@ -109,6 +112,9 @@ export function coerceRendererSettings(settings: AppSettingsV1): AppSettingsV1 {
     schedule: normalizeScheduleSettings(raw.schedule),
     guiUpdate: {
       channel: normalizeGuiUpdateChannel(raw.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL)
+    },
+    ssh: {
+      profiles: Array.isArray(raw.ssh?.profiles) ? raw.ssh.profiles : []
     },
     codePromptPrefix: typeof raw.codePromptPrefix === 'string' ? raw.codePromptPrefix : ''
   }

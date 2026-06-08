@@ -322,10 +322,13 @@ export class JsonSettingsStore {
 
   async patch(partial: AppSettingsPatch): Promise<AppSettingsV1> {
     const cur = await this.load()
-    const { agents: agentsPatch, provider: providerPatch, ...restPatch } = partial
+    const { agents: agentsPatch, provider: providerPatch, ssh: sshPatch, ...restPatch } = partial
     const next = normalizeStoredSettings({
       ...applyKunRuntimePatch(cur, agentsPatch?.kun),
       ...restPatch,
+      ssh: sshPatch
+        ? { ...cur.ssh, ...sshPatch }
+        : cur.ssh,
       provider: mergeModelProviderSettings(cur.provider, providerPatch),
       log: { ...cur.log, ...(partial.log ?? {}) },
       notifications: { ...cur.notifications, ...(partial.notifications ?? {}) },
