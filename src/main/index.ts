@@ -44,6 +44,11 @@ import {
   syncClawScheduleMcpConfig,
   type ClawScheduleMcpLaunchConfig
 } from './claw-schedule-mcp-config'
+import { runOcrMcpServerFromArgv } from './ocr-mcp-server'
+import {
+  syncOcrMcpConfig,
+  type OcrMcpLaunchConfig
+} from './ocr-mcp-config'
 import { registerAppIpcHandlers } from './ipc/register-app-ipc-handlers'
 import {
   configureManagedWeixinBridgeUrlResolver,
@@ -95,6 +100,7 @@ function syncWeixinBridgeRuntime(settings: AppSettingsV1): void {
 
 const runningClawScheduleMcpServer =
   process.argv.includes('--gui-schedule-mcp-server') || process.argv.includes('--claw-schedule-mcp-server')
+const runningOcrMcpServer = process.argv.includes('--gui-ocr-mcp-server')
 
 function resolveLogDirectory(): string {
   return join(app.getPath('userData'), 'logs')
@@ -138,7 +144,7 @@ function runtimeJsonError(code: string, message: string): Error {
 
 traceStartup('main module evaluated')
 
-if (runningClawScheduleMcpServer && process.platform === 'darwin') {
+if ((runningClawScheduleMcpServer || runningOcrMcpServer) && process.platform === 'darwin') {
   app.dock.hide()
 }
 
@@ -762,6 +768,11 @@ if (runningClawScheduleMcpServer) {
     console.error('[claw-schedule-mcp] server failed:', error)
     process.exit(1)
   })
+} else if (runningOcrMcpServer) {
+  void runOcrMcpServerFromArgv(process.argv).catch((error) => {
+    console.error('[ocr-mcp] server failed:', error)
+    process.exit(1)
+  })
 } else {
 app.whenReady().then(async () => {
   traceStartup('app.whenReady:start')
@@ -784,6 +795,9 @@ app.whenReady().then(async () => {
   syncTray(initial)
   await syncClawScheduleMcpConfig(initial, getClawScheduleMcpLaunchConfig()).catch((error) => {
     console.error('[claw-schedule-mcp] failed to sync config on startup:', error)
+  })
+  await syncOcrMcpConfig(getClawScheduleMcpLaunchConfig()).catch((error) => {
+    console.error('[ocr-mcp] failed to sync config on startup:', error)
   })
 
   logDir = resolveLogDirectory()
@@ -842,6 +856,9 @@ app.whenReady().then(async () => {
     const saved = await store.patch(partial)
     await syncClawScheduleMcpConfig(saved, getClawScheduleMcpLaunchConfig()).catch((error) => {
       console.error('[claw-schedule-mcp] failed to sync config after settings change:', error)
+    })
+    await syncOcrMcpConfig(getClawScheduleMcpLaunchConfig()).catch((error) => {
+      console.error('[ocr-mcp] failed to sync config after settings change:', error)
     })
     if (prev.guiUpdate.channel !== saved.guiUpdate.channel && guiUpdaterModulePromise) {
       void guiUpdaterModulePromise.then((module) => module.setGuiUpdateChannel(saved.guiUpdate.channel))
