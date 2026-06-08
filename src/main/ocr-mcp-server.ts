@@ -6,8 +6,10 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { PNG } from 'pngjs'
 import { PDFDocument } from 'pdf-lib'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, unlink, rmdir } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -263,10 +265,16 @@ async function runOcrOnImage(inputPath: string, language: string): Promise<Recog
 }
 
 /**
- * Render a single PDF page to a PNG buffer using pdfjs-dist + pngjs.
- * Returns null when pageIndex is out of range.
+ * Render a single PDF page to a temporary PNG file.
+ * Returns the file path, or null when pageIndex is out of range.
+ * Caller is responsible for cleanup (unlink).
  */
-async function renderPdfPageToPng(pdfData: Uint8Array, pageIndex: number, scale: number): Promise<Buffer | null> {
+async function renderPdfPageToPng(
+  pdfData: Uint8Array,
+  pageIndex: number,
+  scale: number,
+  workDir: string
+): Promise<string | null> {
   const pdf = await getDocument({
     data: pdfData,
     canvasFactory: pdfCanvasFactory,
@@ -286,7 +294,12 @@ async function renderPdfPageToPng(pdfData: Uint8Array, pageIndex: number, scale:
     canvasFactory: pdfCanvasFactory
   }).promise
 
-  return canvas.toPNG()
+  // Write to temp file — tesseract.js worker can't handle in-memory
+  // Buffers across the thread boundary in Node.js ("Unable to
+  // deserialize cloned data").
+  const tmpPath = join(workDir, `page-${pageIndex}.png`)
+  await writeFile(tmpPath, canvas.toPNG())
+  return tmpPath
 }
 
 /**
@@ -306,27 +319,38 @@ async function runOcrOnPdf(pdfPath: string, language: string): Promise<Recognize
   const pdfData = new Uint8Array(await readFile(pdfPath))
   const pageCount = await countPdfPages(pdfData)
 
-  // Render scale = PDF_RENDER_DPI / 72 → gives us the target DPI
   const scale = PDF_RENDER_DPI / 72
+  const workDir = join(tmpdir(), `ocr-${randomUUID()}`)
+  await mkdir(workDir, { recursive: true })
+
+  const tmpFiles: string[] = []
 
   const pageResults: RecognizeResult[] = []
-  for (let i = 0; i < pageCount; i++) {
-    const pngBuffer = await renderPdfPageToPng(pdfData, i, scale)
-    if (!pngBuffer) break
+  try {
+    for (let i = 0; i < pageCount; i++) {
+      const tmpFile = await renderPdfPageToPng(pdfData, i, scale, workDir)
+      if (!tmpFile) break
+      tmpFiles.push(tmpFile)
 
-    const result = await worker.recognize(pngBuffer, { pdfRenderDPI: PDF_RENDER_DPI })
+      // Pass file PATH (not Buffer) — tesseract.js worker can't
+      // deserialize Buffer across the thread boundary
+      const result = await worker.recognize(tmpFile, { pdfRenderDPI: PDF_RENDER_DPI })
 
-    // Tag words with page number
-    for (const word of result.data.words) {
-      ;(word as { page?: number }).page = i + 1
+      for (const word of result.data.words) {
+        ;(word as { page?: number }).page = i + 1
+      }
+      for (const line of result.data.lines) {
+        ;(line as { page?: number }).page = i + 1
+      }
+      for (const block of result.data.blocks) {
+        ;(block as { page?: number }).page = i + 1
+      }
+      pageResults.push(result)
     }
-    for (const line of result.data.lines) {
-      ;(line as { page?: number }).page = i + 1
-    }
-    for (const block of result.data.blocks) {
-      ;(block as { page?: number }).page = i + 1
-    }
-    pageResults.push(result)
+  } finally {
+    // Clean up temp files
+    await Promise.all(tmpFiles.map((f) => unlink(f).catch(() => undefined)))
+    await rmdir(workDir).catch(() => undefined)
   }
 
   if (pageResults.length === 0) {
