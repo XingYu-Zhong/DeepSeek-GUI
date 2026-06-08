@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { MemoryCapabilityConfig } from '../contracts/capabilities.js'
+import { atomicWriteFile } from '../adapters/file/atomic-write.js'
 import {
   MemoryDiagnostics,
   MemoryRecord,
@@ -131,7 +132,10 @@ export class FileMemoryStore implements MemoryStore {
   }
 
   private write(record: MemoryRecord): Promise<void> {
-    return writeFile(join(this.options.rootDir, `${record.id}.json`), JSON.stringify(record, null, 2), 'utf8')
+    return atomicWriteFile(
+      join(this.options.rootDir, `${record.id}.json`),
+      JSON.stringify(record, null, 2)
+    )
   }
 
   private now(): string {

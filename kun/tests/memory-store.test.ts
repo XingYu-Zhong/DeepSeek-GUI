@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -163,6 +163,23 @@ describe('Memory store and recall', () => {
     const finalInstructions = seenRequests.at(-1)?.contextInstructions?.join('\n') ?? ''
     expect(finalInstructions).not.toContain(memory.id)
     expect(finalInstructions).toContain('Shell runtime:')
+  })
+
+  it('writes memory records atomically (no .tmp file left on success)', async () => {
+    const store = createStore()
+    await store.create({ content: 'atomic test memory' })
+
+    // Final file present and parseable.
+    const finalContents = await readFile(
+      join(dir, 'memory', 'mem_1.json'),
+      'utf8'
+    )
+    expect(finalContents.length).toBeGreaterThan(0)
+    expect(JSON.parse(finalContents).content).toBe('atomic test memory')
+
+    // No .tmp leftover from the atomic write.
+    const entries = await readdir(join(dir, 'memory'))
+    expect(entries.filter((entry) => entry.includes('.tmp'))).toEqual([])
   })
 
   function createStore(overrides: Partial<MemoryCapabilityConfig> = {}) {
