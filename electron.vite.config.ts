@@ -9,7 +9,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          'claw-schedule-mcp-node-entry': resolve('src/main/claw-schedule-mcp-node-entry.ts')
+          'claw-schedule-mcp-node-entry': resolve('src/main/claw-schedule-mcp-node-entry.ts'),
+          'ocr-mcp-node-entry': resolve('src/main/ocr-mcp-node-entry.ts'),
+          'ocr-worker-entry': resolve('src/main/ocr-worker-entry.ts')
         }
       }
     }

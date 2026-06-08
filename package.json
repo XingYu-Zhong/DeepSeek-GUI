@@ -1,6 +1,5 @@
 {
   "name": "deepseek-gui",
-  "productName": "DeepSeek GUI",
   "version": "0.1.0",
   "description": "Electron workbench for the Kun runtime (HTTP/SSE)",
   "main": "./out/main/index.js",
@@ -44,14 +43,19 @@
     "@codemirror/view": "^6.43.0",
     "@larksuiteoapi/node-sdk": "^1.64.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opendataloader/pdf": "^2.4.7",
     "@tencent-weixin/openclaw-weixin": "2.4.3",
     "better-sqlite3": "^12.10.0",
+    "canvas": "^3.2.3",
     "electron-store": "^10.1.0",
     "electron-updater": "^6.8.3",
     "html-to-docx": "^1.8.0",
     "i18next": "^25.4.2",
     "lucide-react": "^0.544.0",
     "openclaw": "file:vendor/openclaw-shim",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^3.11.174",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -61,11 +65,13 @@
     "remark-gfm": "^4.0.1",
     "shiki": "^3.23.0",
     "streamdown": "^2.5.0",
+    "tesseract.js": "^6.0.1",
     "zod": "^4.4.3",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@lezer/highlight": "^1.2.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/html-to-docx": "^1.8.1",
     "@types/react": "^19.0.10",
@@ -89,5 +95,14 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/XingYu-Zhong/DeepSeek-GUI.git"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "canvas"
+    ],
+    "ignoredOptionalDependencies": [
+      "canvas",
+      "path2d-polyfill"
+    ]
   }
 }

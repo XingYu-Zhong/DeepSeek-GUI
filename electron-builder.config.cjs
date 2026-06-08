@@ -74,9 +74,30 @@ module.exports = {
     '**/kun/dist/**/*',
     '**/kun/package*.json',
     '**/kun/node_modules/**/*',
+    // OCR worker entry — must be on real fs for child_process.fork()
+    '**/out/main/ocr-worker-entry*',
     '**/node_modules/better-sqlite3/**/*',
     '**/node_modules/bindings/**/*',
-    '**/node_modules/file-uri-to-path/**/*'
+    '**/node_modules/file-uri-to-path/**/*',
+    // tesseract.js OCR engine — unpacked so worker_threads + WASM can load
+    // from real filesystem. Includes tesseract.js's runtime transitive
+    // dependencies (bmp-js, idb-keyval, is-url, node-fetch,
+    // regenerator-runtime, wasm-feature-detect, zlibjs) because the
+    // worker resolves them via Node's ancestor node_modules walk, and
+    // crossing from .unpacked back into the ASAR is not supported.
+    '**/node_modules/tesseract.js/**/*',
+    '**/node_modules/tesseract.js-core/**/*',
+    '**/node_modules/bmp-js/**/*',
+    '**/node_modules/idb-keyval/**/*',
+    '**/node_modules/is-url/**/*',
+    '**/node_modules/node-fetch/**/*',
+    '**/node_modules/regenerator-runtime/**/*',
+    '**/node_modules/wasm-feature-detect/**/*',
+    '**/node_modules/zlibjs/**/*',
+    // canvas (node-canvas) — native .node binary must be on real fs
+    '**/node_modules/.pnpm/canvas*/**/*',
+    // pdfjs-dist — standard_fonts data must be accessible for PDF rendering
+    '**/node_modules/pdfjs-dist/**/*',
   ],
   npmRebuild: true,
   directories: {
@@ -85,6 +106,7 @@ module.exports = {
   files: [
     'out/**/*',
     'package.json',
+    'scripts/vision-ocr.js',
     'kun/dist/**/*',
     'kun/package.json',
     'kun/package-lock.json',
@@ -95,7 +117,8 @@ module.exports = {
     '!**/tsconfig*.json',
     '!**/README*',
     '!**/CHANGELOG*',
-    '!**/node_modules/openclaw/**/*'
+    '!**/node_modules/openclaw/**/*',
+    '!**/node_modules/path2d-polyfill/**/*'
   ],
   artifactName: `DeepSeek-GUI-${artifactVersion}-\${os}-\${arch}.\${ext}`,
   publish: [
