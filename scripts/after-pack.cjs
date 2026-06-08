@@ -5,6 +5,7 @@ const { join } = require('node:path')
 const KUN_RUNTIME_REQUIRED_PATHS = [
   'kun/dist/cli/serve-entry.js',
   'kun/package.json',
+  'kun/package-lock.json',
   'kun/node_modules/zod/package.json',
   'kun/node_modules/diff/package.json',
   'kun/node_modules/@modelcontextprotocol/sdk/package.json'
@@ -50,28 +51,27 @@ function prunePackedKunDependencies(context) {
   const kunDir = join(root, 'kun')
   if (!existsSync(kunDir)) return
 
-  // Remove known dev-only packages manually to avoid npm prune issues
-  // with peer dependency conflicts in the packed ASAR environment.
-  const devOnlyDirs = [
-    'better-sqlite3', // kept on app root for electron-builder rebuild
-    '@types',
-    'typescript',
-    'eslint',
-    'prettier',
-    'vitest',
-    'mocha',
-    'chai',
-    'jest'
-  ]
-  for (const dir of devOnlyDirs) {
-    rmSync(join(kunDir, 'node_modules', dir), { recursive: true, force: true })
-  }
+  assertExists(join(kunDir, 'package.json'), 'Kun package manifest')
+  assertExists(join(kunDir, 'node_modules'), 'Kun node_modules')
+
+  const prune = npmCommand(['prune', '--omit=dev', '--ignore-scripts'])
+  execFileSync(prune.command, prune.args, {
+    cwd: kunDir,
+    env: {
+      ...process.env,
+      npm_config_audit: 'false',
+      npm_config_fund: 'false'
+    },
+    stdio: 'inherit'
+  })
 
   // Keep native SQLite on the app root dependency so electron-builder's
   // native-module rebuild owns the target arch and Electron ABI.
-  if (existsSync(join(root, 'node_modules', 'better-sqlite3', 'package.json'))) {
-    rmSync(join(kunDir, 'node_modules', 'better-sqlite3'), { recursive: true, force: true })
-  }
+  assertExists(
+    join(root, 'node_modules', 'better-sqlite3', 'package.json'),
+    'root better-sqlite3 dependency'
+  )
+  rmSync(join(kunDir, 'node_modules', 'better-sqlite3'), { recursive: true, force: true })
 }
 
 function validateBundledKunRuntime(context) {
