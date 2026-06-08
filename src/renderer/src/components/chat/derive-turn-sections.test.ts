@@ -58,6 +58,51 @@ describe('deriveTurnSections', () => {
     expect(result.processBlocks.map((block) => block.kind)).toEqual(['tool'])
   })
 
+  it('keeps completed assistant text that was separated by tool output', () => {
+    const result = sections([
+      { kind: 'assistant', id: 'intro', text: 'I found the likely cause.' },
+      {
+        kind: 'tool',
+        id: 'tool_read',
+        summary: 'read: source',
+        status: 'success',
+        toolKind: 'tool_call',
+        detail: 'read output'
+      },
+      {
+        kind: 'assistant',
+        id: 'analysis',
+        text: [
+          'Here is the detailed analysis:',
+          '',
+          '```txt',
+          'command output line 1',
+          'command output line 2',
+          '```'
+        ].join('\n')
+      },
+      {
+        kind: 'tool',
+        id: 'tool_issue',
+        summary: 'web_fetch: issue',
+        status: 'success',
+        toolKind: 'tool_call',
+        detail: 'https://github.com/XingYu-Zhong/DeepSeek-GUI/issues/96'
+      },
+      { kind: 'assistant', id: 'next', text: 'The issue link above should still be visible.' }
+    ])
+
+    expect(result.assistantContentBlocks.map((block) => block.id)).toEqual([
+      'intro',
+      'analysis',
+      'next'
+    ])
+    expect(result.assistantContentBlocks.map((block) => block.text).join('\n\n')).toContain(
+      'command output line 2'
+    )
+    expect(result.processBlocks.map((block) => block.id)).toEqual(['tool_read', 'tool_issue'])
+  })
+
   it('does not create assistant content from tool-only process work', () => {
     const result = sections([
       {
