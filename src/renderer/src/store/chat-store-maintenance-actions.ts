@@ -65,6 +65,7 @@ import {
   scheduleStartupRuntimeProbe,
   stopTurnCompletionPoll
 } from './chat-store-schedulers'
+import { teardownClawChannelActivityListener } from './chat-store-navigation-actions'
 import {
   armBusyWatchdog,
   buildFollowupMessageFromUserInput,
@@ -776,6 +777,10 @@ export function createMaintenanceActions(
     try {
       await p.interruptTurn(activeThreadId, currentTurnId, { discard: options?.discard === true })
       settleInterruptedTurn(set, get)
+      // Detach the claw-channel IPC listener so a subsequent boot() can
+      // re-register cleanly. Without this the old listener keeps firing
+      // against the (now-stale) zustand snapshot.
+      teardownClawChannelActivityListener()
       void get().refreshThreads()
       void get().drainQueuedMessages()
     } catch (e) {

@@ -101,6 +101,25 @@ type StoreActionContext = {
 let bootPromise: Promise<void> | null = null
 let clawChannelActivityUnsubscribe: (() => void) | null = null
 
+/**
+ * Detach the IPC listener registered during `boot()`. Safe to call
+ * multiple times. The listener is intentionally module-scoped (not
+ * stored in the zustand state) because it is registered exactly once
+ * for the app's lifetime and never changes — storing it in `ChatState`
+ * would force every `set(...)` to preserve the field, and it would
+ * leak into devtools / selectors.
+ */
+export function teardownClawChannelActivityListener(): void {
+  if (clawChannelActivityUnsubscribe) {
+    try {
+      clawChannelActivityUnsubscribe()
+    } catch {
+      /* listener may already be detached by the IPC layer */
+    }
+    clawChannelActivityUnsubscribe = null
+  }
+}
+
 export function createNavigationActions(
   { set, get, sseAbortRef }: StoreActionContext
 ): Pick<ChatState, 'openCode' | 'openWrite' | 'ensureWriteThreadForWorkspace' | 'createWriteThread' | 'selectWriteThread' | 'probeRuntime' | 'boot' | 'chooseWorkspace' | 'clearWorkspace' | 'deleteWorkspace' | 'refreshThreads' | 'setThreadSearch' | 'setShowArchivedThreads'> {
@@ -316,6 +335,10 @@ export function createNavigationActions(
             ? { route: 'settings' as const, settingsSection: 'agents' as const }
             : {})
         })
+        // SSE 事件 sink（onSeq / onDeltas / onError / onTurnComplete）已经在
+        // 每个事件时 reset；这里补一个"连接明确变 offline"的兜底点，
+        // 处理 SSE 硬断导致 onError 不触发的边界情况。
+        resetBusyRecoveryAttempts()
       } else if (prev === 'ready') {
         stopTurnCompletionPoll()
         set({
@@ -326,6 +349,7 @@ export function createNavigationActions(
             ? { route: 'settings' as const, settingsSection: 'agents' as const }
             : {})
         })
+        resetBusyRecoveryAttempts()
       }
     }
   },
@@ -687,6 +711,7 @@ export function createNavigationActions(
           ? { route: 'settings' as const, settingsSection: 'agents' as const }
           : {})
       })
+      resetBusyRecoveryAttempts()
     }
   },
 

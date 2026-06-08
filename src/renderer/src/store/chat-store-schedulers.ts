@@ -1,10 +1,6 @@
 import type { ChatBlock } from '../agent/types'
 import type { ChatState, ChatStoreGet, ChatStoreSet } from './chat-store-types'
-
-let startupRuntimeProbeTimer: ReturnType<typeof setTimeout> | null = null
-let busyWatchdogTimer: ReturnType<typeof setTimeout> | null = null
-let busyRecoveryAttempts = 0
-let turnCompletionPollTimer: ReturnType<typeof setInterval> | null = null
+import { useTimerState } from './chat-store-timer-state'
 
 type BusyWatchdogOptions = {
   timeoutMs: number
@@ -28,25 +24,45 @@ type TurnCompletionPollOptions = {
   ) => void | Promise<void>
 }
 
+/**
+ * Timer slot accessor. Reads through the zustand singleton rather than
+ * a module-level `let`, so the slot map survives hot-reloads and
+ * resets cleanly between tests. See `chat-store-timer-state.ts` for
+ * the rationale.
+ */
+function readSlots() {
+  return useTimerState.getState().slots
+}
+
+function setHandle(
+  key: 'startupRuntimeProbe' | 'busyWatchdog' | 'turnCompletionPoll',
+  handle: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval> | null
+): void {
+  useTimerState.getState().setHandle(key, handle)
+}
+
 export function scheduleStartupRuntimeProbe(get: ChatStoreGet): void {
-  if (startupRuntimeProbeTimer) {
-    clearTimeout(startupRuntimeProbeTimer)
+  const existing = readSlots().startupRuntimeProbe
+  if (existing) {
+    clearTimeout(existing)
   }
-  startupRuntimeProbeTimer = setTimeout(() => {
-    startupRuntimeProbeTimer = null
+  const handle = setTimeout(() => {
+    setHandle('startupRuntimeProbe', null)
     void get().probeRuntime('user')
   }, 900)
+  setHandle('startupRuntimeProbe', handle)
 }
 
 export function clearBusyWatchdog(): void {
-  if (busyWatchdogTimer) {
-    clearTimeout(busyWatchdogTimer)
-    busyWatchdogTimer = null
+  const existing = readSlots().busyWatchdog
+  if (existing) {
+    clearTimeout(existing)
+    setHandle('busyWatchdog', null)
   }
 }
 
 export function resetBusyRecoveryAttempts(): void {
-  busyRecoveryAttempts = 0
+  useTimerState.getState().setAttempts(0)
 }
 
 export function armBusyWatchdog(
@@ -55,11 +71,12 @@ export function armBusyWatchdog(
   options: BusyWatchdogOptions
 ): void {
   clearBusyWatchdog()
-  busyWatchdogTimer = setTimeout(() => {
+  const handle = setTimeout(() => {
     const state = get()
     if (!state.busy) return
-    busyRecoveryAttempts += 1
-    if (busyRecoveryAttempts <= options.maxAttempts && state.activeThreadId) {
+    useTimerState.getState().incrementAttempts()
+    const attempts = readSlots().busyRecoveryAttempts
+    if (attempts <= options.maxAttempts && state.activeThreadId) {
       void state.recoverActiveTurn()
       return
     }
@@ -73,12 +90,14 @@ export function armBusyWatchdog(
       return options.flushLiveBlocks(snapshot, base)
     })
   }, options.timeoutMs)
+  setHandle('busyWatchdog', handle)
 }
 
 export function stopTurnCompletionPoll(): void {
-  if (turnCompletionPollTimer) {
-    clearInterval(turnCompletionPollTimer)
-    turnCompletionPollTimer = null
+  const existing = readSlots().turnCompletionPoll
+  if (existing) {
+    clearInterval(existing)
+    setHandle('turnCompletionPoll', null)
   }
 }
 
@@ -92,13 +111,14 @@ export function syncTurnCompletionPoll(
     stopTurnCompletionPoll()
     return
   }
-  if (turnCompletionPollTimer != null) return
+  if (readSlots().turnCompletionPoll != null) return
 
   const tick = (): void => {
     void pollTurnCompletionWatch(set, get, options)
   }
 
-  turnCompletionPollTimer = setInterval(tick, 2500)
+  const handle = setInterval(tick, 2500)
+  setHandle('turnCompletionPoll', handle)
   void tick()
 }
 

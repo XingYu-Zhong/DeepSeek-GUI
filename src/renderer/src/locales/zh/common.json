@@ -490,6 +490,8 @@
   "pluginMcpFilesystemDesc": "允许智能体读取和写入指定工作区文件。",
   "pluginMcpGuiScheduleTitle": "DeepSeek GUI 定时任务",
   "pluginMcpGuiScheduleDesc": "内置 MCP 工具，用于查看、创建、更新和删除定时任务。",
+  "pluginMcpGuiOcrTitle": "智能OCR工具",
+  "pluginMcpGuiOcrDesc": "内置 OCR 引擎，支持 100+ 语言。可为扫描件 PDF 和图片提取文字，输出可搜索的 PDF 文件。零系统依赖，开箱即用。",
   "pluginMcpPlaywrightTitle": "Playwright",
   "pluginMcpPlaywrightDesc": "让智能体自动化真实浏览器并检查页面状态。",
   "pluginMcpGithubTitle": "GitHub",
@@ -821,11 +823,6 @@
   "runtimeIdle": "尚未检查运行时",
   "untitledThread": "新会话",
   "retryConnection": "重试连接",
-  "runtimeErrorDetails": "详情",
-  "runtimeErrorTechnicalDetails": "技术详情",
-  "runtimeErrorLogPath": "日志路径",
-  "runtimeErrorOpenLogsFailed": "打开日志目录失败。",
-  "copyDetails": "复制详情",
   "renameThreadHint": "点击重命名会话",
   "noSessionSelected": "未选择会话",
   "sessionHeaderHint": "从左侧进入一个会话，或先恢复运行时连接再继续工作。",
@@ -1249,7 +1246,5 @@
   "toolBuiltinFind": "查找",
   "toolBuiltinLs": "列出",
   "toolBuiltinBash": "命令",
-  "sidebarFooterHint": "连接本地运行后即可创建会话并与代理对话。",
-  "appErrorTitle": "应用出了点问题",
-  "appErrorReload": "重新加载"
+  "sidebarFooterHint": "连接本地运行后即可创建会话并与代理对话。"
 }

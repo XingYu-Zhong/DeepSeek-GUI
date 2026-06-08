@@ -344,12 +344,22 @@ function skillNameLooksValid(raw: string): boolean {
   return !!value && value !== '.' && value !== '..' && !/[\\/]/.test(value)
 }
 
+const GUI_OCR_MCP_SERVER_ID = 'gui_ocr'
+
 const RECOMMENDED_ITEMS: MarketplaceItem[] = [
   {
     id: GUI_SCHEDULE_MCP_SERVER_ID,
     kind: 'mcp',
     titleKey: 'pluginMcpGuiScheduleTitle',
     descriptionKey: 'pluginMcpGuiScheduleDesc',
+    group: 'recommended',
+    systemManaged: true
+  },
+  {
+    id: GUI_OCR_MCP_SERVER_ID,
+    kind: 'mcp',
+    titleKey: 'pluginMcpGuiOcrTitle',
+    descriptionKey: 'pluginMcpGuiOcrDesc',
     group: 'recommended',
     systemManaged: true
   },
@@ -636,7 +646,7 @@ export function PluginMarketplaceView(): ReactElement {
       connected: t('pluginMcpSourceConnected'),
       error: t('pluginMcpSourceError'),
       disabled: t('pluginMcpSourceDisabled')
-    }).filter((item) => item.id !== GUI_SCHEDULE_MCP_SERVER_ID),
+    }).filter((item) => item.id !== GUI_SCHEDULE_MCP_SERVER_ID && item.id !== GUI_OCR_MCP_SERVER_ID),
     [mcpConfigText, t, toolDiagnostics]
   )
   const discoveredMcpIds = useMemo(
@@ -691,7 +701,10 @@ export function PluginMarketplaceView(): ReactElement {
     () => buildMcpMarketplaceOverlay({
       runtimeInfo,
       toolDiagnostics,
-      managedServers: [{ id: GUI_SCHEDULE_MCP_SERVER_ID, toolCount: 4 }]
+      managedServers: [
+        { id: GUI_SCHEDULE_MCP_SERVER_ID, toolCount: 4 },
+        { id: GUI_OCR_MCP_SERVER_ID, toolCount: 4 }
+      ]
     }),
     [runtimeInfo, toolDiagnostics]
   )
