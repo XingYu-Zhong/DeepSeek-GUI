@@ -653,7 +653,7 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
   // ── gui_ocr_check ──────────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_check', {
+  server.registerTool('check', {
     description:
       'Check the built-in OCR engine status. Uses platform-native OCR: ' +
       'Apple Vision (macOS), Windows.Media.Ocr (Windows 10+), or tesseract.js (Linux).'
@@ -681,7 +681,7 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
   // ── gui_ocr_languages ──────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_languages', {
+  server.registerTool('languages', {
     description: 'List all supported OCR language codes.'
   }, async () => {
     const cached = await detectCachedLanguages()
@@ -701,7 +701,7 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
   // ── gui_ocr_preload ─────────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_preload', {
+  server.registerTool('preload', {
     description: 'Pre-download OCR language data for faster subsequent use.',
     inputSchema: {
       language: z.string().min(1).describe('Language code(s), combine with "+", e.g. "eng+chi_sim".')
@@ -718,7 +718,7 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
   // ── gui_ocr_pdf ────────────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_pdf', {
+  server.registerTool('pdf', {
     description:
       'Run OCR on a PDF file. Automatically detects text-based PDFs and ' +
       'extracts text directly (fast). For scanned/image PDFs, renders pages ' +
@@ -796,7 +796,7 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
   // ── gui_ocr_image ──────────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_image', {
+  server.registerTool('image', {
     description: 'Run OCR on an image file (PNG, JPEG, TIFF, BMP, WebP).',
     inputSchema: {
       input_path: z.string().min(1).describe('Absolute path to the input image.'),
