@@ -122,7 +122,14 @@ function buildSideSink(sideId: string, ctx: SideContext): ThreadEventSink {
           const lastSeq = seqs.length > 0 ? Math.max(side.lastSeq, ...seqs) : side.lastSeq
           let liveReasoning = side.liveReasoning
           let liveAssistant = side.liveAssistant
+          // Skip deltas whose seq has already been folded in. Guards
+          // against duplicate SSE delivery / replay overlap.
+          let seenSeq = side.lastSeq
           for (const delta of deltas) {
+            if (typeof delta.seq === 'number') {
+              if (delta.seq <= seenSeq) continue
+              seenSeq = delta.seq
+            }
             if (delta.kind === 'agent_reasoning') liveReasoning += delta.text
             else liveAssistant += delta.text
           }

@@ -101,6 +101,43 @@ describe('thread event sink binding', () => {
     expect(getState().lastSeq).toBe(9)
     expect(getState().turnReasoningFirstAtByUserId['user-current']).toEqual(expect.any(Number))
   })
+
+  it('skips reasoning deltas whose seq has already been folded in', () => {
+    const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current' })
+    const controller = new AbortController()
+    const sink = buildThreadEventSink(set, get, {
+      threadId: 'thread-current',
+      signal: controller.signal
+    })
+
+    sink.onDeltas([{ kind: 'agent_reasoning', text: 'The', seq: 1 }])
+    sink.onDeltas([{ kind: 'agent_reasoning', text: ' old', seq: 2 }])
+    // The same SSE event arrives again (duplicate delivery / replay overlap).
+    sink.onDeltas([{ kind: 'agent_reasoning', text: ' old', seq: 2 }])
+    sink.onDeltas([{ kind: 'agent_reasoning', text: ' code', seq: 3 }])
+
+    expect(getState().liveReasoning).toBe('The old code')
+    expect(getState().lastSeq).toBe(3)
+  })
+
+  it('skips duplicate-seq reasoning deltas within a single batch', () => {
+    const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current' })
+    const controller = new AbortController()
+    const sink = buildThreadEventSink(set, get, {
+      threadId: 'thread-current',
+      signal: controller.signal
+    })
+
+    sink.onDeltas([
+      { kind: 'agent_reasoning', text: 'The', seq: 1 },
+      { kind: 'agent_reasoning', text: 'The', seq: 1 },
+      { kind: 'agent_reasoning', text: ' old', seq: 2 },
+      { kind: 'agent_reasoning', text: ' old', seq: 2 }
+    ])
+
+    expect(getState().liveReasoning).toBe('The old')
+    expect(getState().lastSeq).toBe(2)
+  })
 })
 
 describe('thread event sink runtime errors', () => {

@@ -591,7 +591,15 @@ export function buildThreadEventSink(
         let nextReasoningFirstAtByUserId = s.turnReasoningFirstAtByUserId
         let nextReasoningLastAtByUserId = s.turnReasoningLastAtByUserId
         const userId = s.currentTurnUserId
+        // Guard against the same delta arriving twice (duplicate SSE
+        // delivery, replay overlap, etc.) by skipping any delta whose
+        // seq is <= the highest seq we have already folded in.
+        let seenSeq = s.lastSeq
         for (const delta of deltas) {
+          if (typeof delta.seq === 'number') {
+            if (delta.seq <= seenSeq) continue
+            seenSeq = delta.seq
+          }
           if (delta.kind === 'agent_reasoning') {
             liveReasoning += delta.text
             if (userId) {
