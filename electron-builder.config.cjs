@@ -106,6 +106,7 @@ module.exports = {
   files: [
     'out/**/*',
     'package.json',
+    'scripts/vision-ocr.js',
     'kun/dist/**/*',
     'kun/package.json',
     'kun/package-lock.json',

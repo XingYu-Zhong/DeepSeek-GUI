@@ -54,6 +54,7 @@
     "lucide-react": "^0.544.0",
     "openclaw": "file:vendor/openclaw-shim",
     "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^3.11.174",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
