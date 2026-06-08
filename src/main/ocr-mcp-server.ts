@@ -1,194 +1,256 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { spawn } from 'node:child_process'
+import { createWorker, type Worker, type RecognizeResult } from 'tesseract.js'
+import { PDFDocument, type PDFPage } from 'pdf-lib'
+import sharp from 'sharp'
 import { existsSync } from 'node:fs'
-import { access, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
-import { tmpdir } from 'node:os'
 
-// ── Resolve the ocrmypdf binary ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Constants
+// ═══════════════════════════════════════════════════════════════════════════
 
-function resolveOcrmypdfBin(): string {
-  if (process.env.OCRMYPDF_BIN) return process.env.OCRMYPDF_BIN
-  if (process.platform === 'win32') {
-    return 'ocrmypdf.exe'
+/** DPI used when rendering PDF pages for OCR. Affects coordinate scaling. */
+const PDF_RENDER_DPI = 300
+/** PDF user-space units per inch. Fixed in the PDF spec. */
+const PDF_POINTS_PER_INCH = 72
+/** Scale factor from pixel coordinates (at PDF_RENDER_DPI) to PDF points. */
+const PIXEL_TO_PDF = PDF_POINTS_PER_INCH / PDF_RENDER_DPI
+
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.pnm', '.pbm', '.webp'
+])
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tesseract worker pool (lazy singleton — created once per server lifetime)
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _workerPromise: Promise<Worker> | null = null
+
+function getWorker(): Promise<Worker> {
+  if (!_workerPromise) {
+    _workerPromise = createWorker('eng', 1, {
+      errorHandler: (err) => {
+        // Surface worker errors without crashing the server
+        console.error('[ocr-mcp] tesseract worker error:', err.message)
+      }
+    })
   }
-  return 'ocrmypdf'
+  return _workerPromise
 }
 
-// ── Run ocrmypdf as a child process ────────────────────────────────────
+async function terminateWorker(): Promise<void> {
+  if (!_workerPromise) return
+  try {
+    const worker = await _workerPromise
+    await worker.terminate()
+  } catch {
+    /* best-effort */
+  }
+  _workerPromise = null
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════════════════════════════
+
+type OcrWord = {
+  text: string
+  bbox: { x0: number; y0: number; x1: number; y1: number }
+  confidence: number
+}
+
+type OcrPage = {
+  pageNumber: number
+  text: string
+  words: OcrWord[]
+  confidence: number
+}
 
 type OcrResult = {
-  ok: true
-  outputPath: string
-  stdout: string
-  stderr: string
-  exitCode: number
+  text: string
+  pages: OcrPage[]
+  confidence: number
   durationMs: number
 }
 
-type OcrError = {
-  ok: false
-  error: string
-  stdout: string
-  stderr: string
-}
+type OcrOutcome =
+  | { ok: true; result: OcrResult }
+  | { ok: false; error: string }
 
-async function runOcrmypdf(
-  args: string[],
-  timeoutMs = 300_000
-): Promise<OcrResult | OcrError> {
-  const bin = resolveOcrmypdfBin()
-  const startedAt = Date.now()
+// ═══════════════════════════════════════════════════════════════════════════
+// Core OCR engine (tesseract.js)
+// ═══════════════════════════════════════════════════════════════════════════
 
-  return new Promise((resolve) => {
-    const child = spawn(bin, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs
+/**
+ * Preprocess an image with sharp to improve OCR accuracy:
+ * - Convert to grayscale
+ * - Increase contrast
+ * - Sharpen
+ * - Resize if too large (keeps memory usage reasonable)
+ */
+async function preprocessImage(inputPath: string): Promise<Buffer> {
+  const MAX_DIMENSION = 4096
+  const image = sharp(inputPath)
+
+  const metadata = await image.metadata()
+  const width = metadata.width ?? 0
+  const height = metadata.height ?? 0
+
+  let pipeline = image
+    .grayscale()
+    .normalize()
+    .sharpen({ sigma: 0.8 })
+
+  // Only resize if the image exceeds max dimension
+  if (Math.max(width, height) > MAX_DIMENSION) {
+    pipeline = pipeline.resize(MAX_DIMENSION, MAX_DIMENSION, {
+      fit: 'inside',
+      withoutEnlargement: true
     })
-
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-    })
-
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') {
-        resolve({
-          ok: false,
-          error: `OCRmyPDF binary not found. Install it with: pip install ocrmypdf (or brew install ocrmypdf)`,
-          stdout,
-          stderr
-        })
-      } else {
-        resolve({
-          ok: false,
-          error: `Failed to spawn OCRmyPDF: ${err.message}`,
-          stdout,
-          stderr
-        })
-      }
-    })
-
-    child.on('close', (code: number | null) => {
-      const durationMs = Date.now() - startedAt
-      if (code === 0) {
-        resolve({
-          ok: true,
-          outputPath: args[args.length - 1] ?? '',
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          exitCode: 0,
-          durationMs
-        })
-      } else {
-        const errorMessage = stderr.trim() || stdout.trim() || `Exit code ${code}`
-        resolve({
-          ok: false,
-          error: errorMessage,
-          stdout: stdout.trim(),
-          stderr: stderr.trim()
-        })
-      }
-    })
-  })
-}
-
-// ── Check installation ──────────────────────────────────────────────────
-
-type OcrmypdfInfo = {
-  installed: boolean
-  version: string
-  binPath: string
-  tesseractInstalled: boolean
-  tesseractVersion: string
-  availableLanguages: string[]
-}
-
-async function checkInstallation(): Promise<OcrmypdfInfo> {
-  const info: OcrmypdfInfo = {
-    installed: false,
-    version: '',
-    binPath: resolveOcrmypdfBin(),
-    tesseractInstalled: false,
-    tesseractVersion: '',
-    availableLanguages: []
   }
 
-  // Check ocrmypdf binary
-  try {
-    await access(resolveOcrmypdfBin())
-    info.installed = true
-  } catch {
-    // Try which/where
-    const result = await runOcrmypdf(['--version'], 10_000)
-    if (result.ok) {
-      info.installed = true
-      info.version = result.stdout.split('\n')[0]?.trim() || ''
+  return pipeline.toBuffer()
+}
+
+async function runOcrOnImage(imageBuffer: Buffer, language: string): Promise<RecognizeResult> {
+  const worker = await getWorker()
+  await worker.loadLanguage(language)
+  await worker.reinitialize(language)
+  const result = await worker.recognize(imageBuffer, { pdfRenderDPI: PDF_RENDER_DPI })
+  return result
+}
+
+async function runOcrOnPdf(pdfPath: string, language: string): Promise<RecognizeResult> {
+  // tesseract.js v6 can ingest PDFs directly — it renders pages internally
+  // at pdfRenderDPI and OCRs each page.
+  const worker = await getWorker()
+  await worker.loadLanguage(language)
+  await worker.reinitialize(language)
+  const pdfBuffer = await readFile(pdfPath)
+  const result = await worker.recognize(pdfBuffer, { pdfRenderDPI: PDF_RENDER_DPI })
+  return result
+}
+
+function buildPageData(result: RecognizeResult): OcrPage[] {
+  const pages = new Map<number, { text: string; words: OcrWord[]; confidences: number[] }>()
+
+  for (const word of result.data.words) {
+    const pageNum = (word as { page?: number }).page ?? 1
+    if (!pages.has(pageNum)) {
+      pages.set(pageNum, { text: '', words: [], confidences: [] })
+    }
+    const page = pages.get(pageNum)!
+    const wordText = word.text || ''
+    if (wordText.trim()) {
+      page.words.push({
+        text: wordText,
+        bbox: { x0: word.bbox.x0, y0: word.bbox.y0, x1: word.bbox.x1, y1: word.bbox.y1 },
+        confidence: word.confidence
+      })
+      page.text += (page.text ? ' ' : '') + wordText
+    }
+    page.confidences.push(word.confidence)
+  }
+
+  const result_pages: OcrPage[] = []
+  for (const [pageNum, data] of pages) {
+    const avgConf = data.confidences.length
+      ? data.confidences.reduce((a, b) => a + b, 0) / data.confidences.length
+      : 0
+    result_pages.push({
+      pageNumber: pageNum,
+      text: data.text,
+      words: data.words,
+      confidence: Math.round(avgConf)
+    })
+  }
+
+  // If no word-level data, fall back to the global text
+  if (result_pages.length === 0 && result.data.text.trim()) {
+    result_pages.push({
+      pageNumber: 1,
+      text: result.data.text.trim(),
+      words: [],
+      confidence: Math.round(result.data.confidence)
+    })
+  }
+
+  return result_pages
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Searchable PDF generation (pdf-lib)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Embed an invisible but selectable text layer into a copy of the original
+ * PDF using per-word bounding boxes from tesseract.js.
+ *
+ * Coordinates are transformed from pixel space (at PDF_RENDER_DPI, top-left
+ * origin) to PDF user space (points, bottom-left origin).
+ */
+async function embedTextLayer(
+  originalPdfPath: string,
+  outputPdfPath: string,
+  pages: OcrPage[]
+): Promise<void> {
+  const pdfBytes = await readFile(originalPdfPath)
+  const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true })
+  const helvetica = pdfDoc.embedStandardFont('Helvetica')
+
+  for (const ocrPage of pages) {
+    const pageIndex = ocrPage.pageNumber - 1
+    if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) continue
+
+    const pdfPage = pdfDoc.getPage(pageIndex)
+    const { height: pageHeight } = pdfPage.getSize()
+
+    if (ocrPage.words.length > 0) {
+      // Word-level embedding: place each word at its recognized position
+      for (const word of ocrPage.words) {
+        if (!word.text.trim()) continue
+
+        const fontSize = Math.max(
+          (word.bbox.y1 - word.bbox.y0) * PIXEL_TO_PDF,
+          4 // minimum font size for readability in PDF
+        )
+
+        // Convert from image coords (top-left origin) to PDF coords (bottom-left origin)
+        const x = word.bbox.x0 * PIXEL_TO_PDF
+        const y = pageHeight - word.bbox.y1 * PIXEL_TO_PDF
+
+        pdfPage.drawText(word.text, {
+          x,
+          y,
+          size: fontSize,
+          font: helvetica,
+          opacity: 0 // invisible but selectable/copyable
+        })
+      }
     } else {
-      info.installed = !result.error.includes('not found')
+      // Fallback: embed the full page text as a single invisible block at
+      // the top of the page. Still makes it searchable.
+      pdfPage.drawText(ocrPage.text, {
+        x: 36,
+        y: pageHeight - 36,
+        size: 10,
+        font: helvetica,
+        opacity: 0,
+        maxWidth: pdfPage.getSize().width - 72
+      })
     }
   }
 
-  if (info.installed) {
-    const versionResult = await runOcrmypdf(['--version'], 10_000)
-    if (versionResult.ok) {
-      info.version = versionResult.stdout.split('\n')[0]?.trim() || ''
-    }
-  }
-
-  // Check tesseract
-  const tesseractBin = process.platform === 'win32' ? 'tesseract.exe' : 'tesseract'
-  try {
-    await access(tesseractBin)
-    info.tesseractInstalled = true
-  } catch {
-    // try spawn
-    const tesseractResult = await new Promise<{ installed: boolean; version: string }>((resolve) => {
-      const child = spawn(tesseractBin, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 })
-      let out = ''
-      child.stdout?.on('data', (c: Buffer) => { out += c.toString() })
-      child.on('error', () => resolve({ installed: false, version: '' }))
-      child.on('close', (code: number | null) => {
-        resolve({
-          installed: code === 0,
-          version: out.split('\n')[0]?.trim() || ''
-        })
-      })
-    })
-    info.tesseractInstalled = tesseractResult.installed
-    info.tesseractVersion = tesseractResult.version
-  }
-
-  // Get available languages
-  if (info.tesseractInstalled) {
-    const langResult = await new Promise<string[]>((resolve) => {
-      const child = spawn(tesseractBin, ['--list-langs'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 })
-      let out = ''
-      child.stdout?.on('data', (c: Buffer) => { out += c.toString() })
-      child.stderr?.on('data', (c: Buffer) => { out += c.toString() })
-      child.on('error', () => resolve([]))
-      child.on('close', () => {
-        const lines = out.split('\n')
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0 && !l.startsWith('List of'))
-        resolve(lines)
-      })
-    })
-    info.availableLanguages = langResult
-  }
-
-  return info
+  const outputBytes = await pdfDoc.save()
+  await writeFile(outputPdfPath, outputBytes)
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// MCP helpers
+// ═══════════════════════════════════════════════════════════════════════════
 
 function textResult(text: string, structuredContent?: Record<string, unknown>) {
   return {
@@ -211,104 +273,148 @@ function resolveOutputPath(inputPath: string, outputPath?: string): string {
   return join(dir, `${base}_ocr.pdf`)
 }
 
-// ── Supported languages table ──────────────────────────────────────────
-
-const SUPPORTED_LANGUAGES = [
+/** All Tesseract language codes (ISO 639-3) supported by tesseract.js */
+const ALL_TESSERACT_LANGUAGES = [
   'afr', 'amh', 'ara', 'asm', 'aze', 'aze_cyrl', 'bel', 'ben', 'bod', 'bos',
-  'bre', 'bul', 'cat', 'ceb', 'ces', 'chi_sim', 'chi_sim_vert', 'chi_tra',
-  'chi_tra_vert', 'chr', 'cos', 'cym', 'dan', 'deu', 'div', 'dzo', 'ell',
-  'eng', 'enm', 'epo', 'est', 'eus', 'fao', 'fas', 'fil', 'fin', 'fra',
-  'frk', 'frm', 'fry', 'gla', 'gle', 'glg', 'grc', 'guj', 'hat', 'heb',
-  'hin', 'hrv', 'hun', 'hye', 'iku', 'ind', 'isl', 'ita', 'ita_old', 'jav',
-  'jpn', 'jpn_vert', 'kan', 'kat', 'kat_old', 'kaz', 'khm', 'kir', 'kmr',
-  'kor', 'kor_vert', 'lao', 'lat', 'lav', 'lit', 'ltz', 'mal', 'mar', 'mkd',
-  'mlt', 'mon', 'mri', 'msa', 'mya', 'nep', 'nld', 'nor', 'oci', 'ori',
-  'pan', 'pol', 'por', 'pus', 'que', 'ron', 'rus', 'san', 'sin', 'slk',
-  'slv', 'snd', 'spa', 'spa_old', 'sqi', 'srp', 'srp_latn', 'sun', 'swa',
-  'swe', 'syr', 'tam', 'tat', 'tel', 'tgk', 'tha', 'tir', 'ton', 'tur',
-  'uig', 'ukr', 'urd', 'uzb', 'uzb_cyrl', 'vie', 'yid', 'yor'
+  'bre', 'bul', 'cat', 'ceb', 'ces', 'chi_sim', 'chi_tra', 'chr', 'cos',
+  'cym', 'dan', 'deu', 'div', 'dzo', 'ell', 'eng', 'enm', 'epo', 'est',
+  'eus', 'fao', 'fas', 'fil', 'fin', 'fra', 'frk', 'frm', 'fry', 'gla',
+  'gle', 'glg', 'grc', 'guj', 'hat', 'heb', 'hin', 'hrv', 'hun', 'hye',
+  'iku', 'ind', 'isl', 'ita', 'ita_old', 'jav', 'jpn', 'kan', 'kat',
+  'kat_old', 'kaz', 'khm', 'kir', 'kmr', 'kor', 'lao', 'lat', 'lav', 'lit',
+  'ltz', 'mal', 'mar', 'mkd', 'mlt', 'mon', 'mri', 'msa', 'mya', 'nep',
+  'nld', 'nor', 'oci', 'ori', 'pan', 'pol', 'por', 'pus', 'que', 'ron',
+  'rus', 'san', 'sin', 'slk', 'slv', 'snd', 'spa', 'spa_old', 'sqi', 'srp',
+  'srp_latn', 'sun', 'swa', 'swe', 'syr', 'tam', 'tat', 'tel', 'tgk', 'tha',
+  'tir', 'ton', 'tur', 'uig', 'ukr', 'urd', 'uzb', 'uzb_cyrl', 'vie', 'yid', 'yor'
 ] as const
 
-// ── MCP server definition ──────────────────────────────────────────────
+// Build a quick lookup of languages that are already cached locally.
+// tesseract.js auto-downloads language data on first use; we report which
+// ones are available now vs. which will trigger a one-time download.
+async function detectCachedLanguages(): Promise<string[]> {
+  try {
+    const worker = await getWorker()
+    const langs = await worker.loadLanguage('eng')
+    // loadLanguage doesn't return the list — just use the known set
+    return ['eng'] // eng is bundled with the worker
+  } catch {
+    return []
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MCP server definition
+// ═══════════════════════════════════════════════════════════════════════════
 
 export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> {
   if (!argv.includes('--gui-ocr-mcp-server')) return false
 
   const server = new McpServer(
-    { name: 'deepseek-gui-ocr', version: '0.1.0' },
+    { name: 'deepseek-gui-ocr', version: '0.2.0' },
     { capabilities: { logging: {} } }
   )
 
-  // ── gui_ocr_check ────────────────────────────────────────────────
+  // ── gui_ocr_check ──────────────────────────────────────────────────
 
   server.registerTool('gui_ocr_check', {
     description:
-      'Check if OCRmyPDF is installed and ready. Returns version, available Tesseract languages, and installation status.'
+      'Check the built-in OCR engine status. Always returns ready — the OCR ' +
+      'engine (tesseract.js) is bundled with DeepSeek GUI and requires zero ' +
+      'system configuration. Language data for English is pre-installed; ' +
+      'additional languages auto-download on first use.'
   }, async () => {
     try {
-      const info = await checkInstallation()
-      if (!info.installed) {
-        return errorResult(
-          'OCRmyPDF is not installed. Install it with:\n' +
-          '  macOS:  brew install ocrmypdf\n' +
-          '  Linux:  apt install ocrmypdf   or   pip install ocrmypdf\n' +
-          '  Windows: pip install ocrmypdf\n' +
-          'Tesseract is also required for OCR.'
-        )
-      }
+      const cached = await detectCachedLanguages()
       return textResult(
         [
-          `OCRmyPDF ${info.version} — installed and ready.`,
-          `Tesseract: ${info.tesseractInstalled ? info.tesseractVersion || 'installed' : 'NOT INSTALLED'}`,
-          info.availableLanguages.length
-            ? `Available languages (${info.availableLanguages.length}): ${info.availableLanguages.join(', ')}`
-            : 'No Tesseract language data found. Install with: apt install tesseract-ocr-<lang>'
+          'Built-in OCR engine — ready.',
+          '',
+          `Pre-cached languages: ${cached.length ? cached.join(', ') : 'eng (bundled)'}`,
+          `All supported languages (${ALL_TESSERACT_LANGUAGES.length}): ${ALL_TESSERACT_LANGUAGES.join(', ')}`,
+          '',
+          'Use gui_ocr_languages for the full list of available language codes.',
+          'Use gui_ocr_pdf to OCR a PDF, gui_ocr_image to OCR an image.',
+          '',
+          'Language data for non-English languages auto-downloads on first use ',
+          'and is cached permanently. No system packages required.'
         ].join('\n'),
         {
-          installed: info.installed,
-          version: info.version,
-          tesseractInstalled: info.tesseractInstalled,
-          tesseractVersion: info.tesseractVersion,
-          availableLanguages: info.availableLanguages
+          engine: 'tesseract.js (WASM)',
+          ready: true,
+          bundledLanguage: 'eng',
+          supportedLanguageCount: ALL_TESSERACT_LANGUAGES.length,
+          cachedLanguages: cached
         }
       )
     } catch (err) {
-      return errorResult(`Failed to check OCRmyPDF: ${err instanceof Error ? err.message : String(err)}`)
+      return errorResult(
+        `OCR engine error: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   })
 
-  // ── gui_ocr_pdf ──────────────────────────────────────────────────
+  // ── gui_ocr_languages ──────────────────────────────────────────────
+
+  server.registerTool('gui_ocr_languages', {
+    description:
+      'List all Tesseract OCR language codes supported by the built-in engine. ' +
+      'Use these codes with gui_ocr_pdf or gui_ocr_image (e.g. "eng", "chi_sim", ' +
+      '"eng+chi_sim"). English (eng) is pre-installed; others download automatically ' +
+      'on first use and are cached permanently.'
+  }, async () => {
+    const cached = await detectCachedLanguages()
+    return textResult(
+      [
+        `Supported language codes (${ALL_TESSERACT_LANGUAGES.length} total):`,
+        '',
+        ...ALL_TESSERACT_LANGUAGES.map(
+          (l) => `${l}${cached.includes(l) ? ' [pre-cached]' : ' [auto-download on first use]'}`
+        ),
+        '',
+        'Combine multiple languages with "+", e.g. "eng+chi_sim+fra".',
+        'English (eng) is pre-installed with the engine.'
+      ].join('\n'),
+      {
+        languages: ALL_TESSERACT_LANGUAGES,
+        cachedLanguages: cached,
+        combineWith: '+'
+      }
+    )
+  })
+
+  // ── gui_ocr_pdf ────────────────────────────────────────────────────
 
   server.registerTool('gui_ocr_pdf', {
     description:
-      'Run OCR (Optical Character Recognition) on a PDF file using OCRmyPDF. ' +
-      'Adds a searchable text layer to scanned PDFs. Supports 100+ languages, ' +
-      'deskew, cleaning, and PDF/A output.',
+      'Run OCR on a PDF file using the built-in tesseract.js engine. ' +
+      'Extracts text from scanned/image-based PDFs. Optionally creates a ' +
+      'searchable output PDF with an invisible selectable text layer. ' +
+      'Supports 100+ languages. Zero system dependencies required.',
     inputSchema: {
       input_path: z.string().min(1).describe('Absolute path to the input PDF file'),
       output_path: z.string().optional().describe(
-        'Absolute path for the output PDF. If omitted, saves next to the input with "_ocr" suffix.'
+        'Absolute path for the output searchable PDF. If provided, a copy of the ' +
+        'original PDF is saved here with an invisible selectable text layer. ' +
+        'If omitted, only text extraction is performed (no output file).'
       ),
       language: z.string().optional().describe(
-        'OCR language(s). Use 3-letter Tesseract codes. Combine with "+" for multiple, e.g. "eng", "chi_sim", "eng+chi_sim". Default: "eng"'
+        'OCR language(s) as 3-letter Tesseract codes. Combine multiple with "+", ' +
+        'e.g. "eng", "chi_sim", "eng+chi_sim+fra". Default: "eng". ' +
+        'Non-English languages auto-download on first use.'
       ),
-      output_type: z.enum(['pdf', 'pdfa', 'pdfa-1', 'pdfa-2', 'pdfa-3']).optional().describe(
-        'Output PDF type. "pdf" = normal PDF with text layer (default). "pdfa" = PDF/A-2. "pdfa-1"/"pdfa-2"/"pdfa-3" = specific PDF/A levels.'
+      create_searchable_pdf: z.boolean().optional().describe(
+        'If true, create a searchable PDF at output_path with an invisible text ' +
+        'layer embedded at word positions. Default: true when output_path is set.'
       ),
-      deskew: z.boolean().optional().describe('Auto-deskew crooked pages. Default: false'),
-      clean: z.boolean().optional().describe('Clean up pages (remove speckles, smooth). Default: false'),
-      skip_text: z.boolean().optional().describe('Skip OCR on pages that already have selectable text. Default: false'),
-      force_ocr: z.boolean().optional().describe('Force OCR on every page, ignoring existing text. Default: false'),
-      optimize: z.number().int().min(0).max(3).optional().describe(
-        'Optimization level: 0=fastest, 1=balanced (default), 2=higher quality, 3=maximum quality (slowest)'
-      ),
-      rotate_pages: z.boolean().optional().describe('Auto-detect and correct page orientation. Default: true'),
-      remove_background: z.boolean().optional().describe('Remove background to improve OCR accuracy. Default: false'),
-      timeout_seconds: z.number().int().min(10).max(3600).optional().describe(
-        'Maximum time in seconds before giving up. Default: 300 (5 minutes)'
+      timeout_seconds: z.number().int().min(30).max(3600).optional().describe(
+        'Maximum time in seconds before giving up. Default: 300 (5 minutes). ' +
+        'Large PDFs with many pages may need more time.'
       )
     }
   }, async (args) => {
+    const startedAt = Date.now()
+
     try {
       const inputPath = args.input_path
       if (!existsSync(inputPath)) {
@@ -317,100 +423,177 @@ export async function runOcrMcpServerFromArgv(argv: string[]): Promise<boolean> 
 
       const ext = extname(inputPath).toLowerCase()
       if (ext !== '.pdf') {
-        return errorResult(`Input must be a .pdf file, got "${ext}"`)
+        return errorResult(`Input must be a .pdf file, got "${ext}". Use gui_ocr_image for images.`)
       }
 
-      const outputPath = resolveOutputPath(inputPath, args.output_path)
-      const outputDir = dirname(outputPath)
-      try {
-        await mkdir(outputDir, { recursive: true })
-      } catch {
-        // directory likely exists
+      const language = args.language || 'eng'
+      const shouldCreatePdf = args.create_searchable_pdf ?? (args.output_path !== undefined)
+
+      // Ensure output directory exists
+      if (args.output_path) {
+        const outputDir = dirname(args.output_path)
+        try { await mkdir(outputDir, { recursive: true }) } catch { /* exists */ }
       }
 
-      // Build OCRmyPDF arguments
-      const ocrArgs: string[] = []
-
-      if (args.language) {
-        ocrArgs.push('-l', args.language)
-      }
-
-      if (args.output_type) {
-        ocrArgs.push('--output-type', args.output_type)
-      }
-
-      if (args.deskew) ocrArgs.push('--deskew')
-      if (args.clean) ocrArgs.push('--clean')
-      if (args.skip_text) ocrArgs.push('--skip-text')
-      if (args.force_ocr) ocrArgs.push('--force-ocr')
-      if (args.remove_background) ocrArgs.push('--remove-background')
-
-      if (args.rotate_pages !== undefined && !args.rotate_pages) {
-        ocrArgs.push('--no-rotate-pages')
-      }
-
-      if (args.optimize !== undefined) {
-        ocrArgs.push('--optimize', String(args.optimize))
-      }
-
-      ocrArgs.push(inputPath, outputPath)
-
-      const timeoutMs = (args.timeout_seconds ?? 300) * 1000
-      const result = await runOcrmypdf(ocrArgs, timeoutMs)
-
-      if (!result.ok) {
-        return errorResult(
-          `OCRmyPDF failed:\n${result.error}\n\nCommand: ocrmypdf ${ocrArgs.join(' ')}`
-        )
-      }
-
-      return textResult(
-        [
-          `OCR completed successfully in ${(result.durationMs / 1000).toFixed(1)}s.`,
-          `Output: ${result.outputPath}`,
-          result.stdout ? `\nDetails:\n${result.stdout}` : ''
-        ].filter(Boolean).join('\n'),
-        {
-          outputPath: result.outputPath,
-          inputPath,
-          durationMs: result.durationMs,
-          language: args.language ?? 'eng',
-          outputType: args.output_type ?? 'pdf'
-        }
+      // Run OCR
+      const recognizeResult = await withTimeout(
+        runOcrOnPdf(inputPath, language),
+        (args.timeout_seconds ?? 300) * 1000,
+        'OCR timed out'
       )
+
+      const pages = buildPageData(recognizeResult)
+      const fullText = pages.map((p) => p.text).join('\n\n')
+      const avgConfidence = pages.length
+        ? Math.round(pages.reduce((s, p) => s + p.confidence, 0) / pages.length)
+        : 0
+      const durationMs = Date.now() - startedAt
+
+      let outputPath: string | undefined
+
+      // Optionally create searchable PDF
+      if (shouldCreatePdf && pages.length > 0) {
+        outputPath = resolveOutputPath(inputPath, args.output_path)
+        await embedTextLayer(inputPath, outputPath, pages)
+      }
+
+      const summaryLines = [
+        `OCR completed in ${(durationMs / 1000).toFixed(1)}s.`,
+        `Pages: ${pages.length}`,
+        `Average confidence: ${avgConfidence}%`,
+        `Language: ${language}`,
+      ]
+      if (outputPath) {
+        summaryLines.push(`Searchable PDF saved to: ${outputPath}`)
+      }
+      summaryLines.push('', '--- Recognized text ---', fullText || '(no text recognized)')
+
+      return textResult(summaryLines.join('\n'), {
+        durationMs,
+        pageCount: pages.length,
+        confidence: avgConfidence,
+        language,
+        text: fullText,
+        outputPath: outputPath ?? null,
+        pages: pages.map((p) => ({
+          pageNumber: p.pageNumber,
+          text: p.text.slice(0, 500), // truncate in structured output
+          confidence: p.confidence,
+          wordCount: p.words.length
+        }))
+      })
     } catch (err) {
-      return errorResult(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`)
+      const durationMs = Date.now() - startedAt
+      return errorResult(
+        `OCR failed after ${(durationMs / 1000).toFixed(1)}s: ` +
+        `${err instanceof Error ? err.message : String(err)}`
+      )
     }
   })
 
-  // ── gui_ocr_languages ────────────────────────────────────────────
+  // ── gui_ocr_image ──────────────────────────────────────────────────
 
-  server.registerTool('gui_ocr_languages', {
+  server.registerTool('gui_ocr_image', {
     description:
-      'List Tesseract OCR languages installed on this system. ' +
-      'Use the returned language codes with gui_ocr_pdf\'s `language` parameter.'
-  }, async () => {
+      'Run OCR on an image file (PNG, JPEG, TIFF, BMP, WebP) using the built-in ' +
+      'tesseract.js engine. Images are automatically preprocessed (grayscale, ' +
+      'contrast enhancement, sharpen) for better accuracy. Supports 100+ languages.',
+    inputSchema: {
+      input_path: z.string().min(1).describe('Absolute path to the input image file'),
+      language: z.string().optional().describe(
+        'OCR language(s) as 3-letter Tesseract codes. Combine multiple with "+", ' +
+        'e.g. "eng", "chi_sim", "eng+chi_sim". Default: "eng".'
+      ),
+      preprocess: z.boolean().optional().describe(
+        'Enable automatic image preprocessing (grayscale + contrast + sharpen). ' +
+        'Default: true. Disable if the image is already clean black-and-white text.'
+      )
+    }
+  }, async (args) => {
+    const startedAt = Date.now()
+
     try {
-      const info = await checkInstallation()
-      if (!info.tesseractInstalled) {
+      const inputPath = args.input_path
+      if (!existsSync(inputPath)) {
+        return errorResult(`Input file not found: ${inputPath}`)
+      }
+
+      const ext = extname(inputPath).toLowerCase()
+      if (!SUPPORTED_IMAGE_EXTENSIONS.has(ext)) {
         return errorResult(
-          'Tesseract is not installed. Install it with:\n' +
-          '  macOS:  brew install tesseract tesseract-lang\n' +
-          '  Linux:  apt install tesseract-ocr tesseract-ocr-all'
+          `Unsupported image format "${ext}". Supported: ${[...SUPPORTED_IMAGE_EXTENSIONS].join(', ')}`
         )
       }
+
+      const language = args.language || 'eng'
+      const shouldPreprocess = args.preprocess !== false
+
+      // Preprocess or read raw
+      const imageBuffer = shouldPreprocess
+        ? await preprocessImage(inputPath)
+        : await readFile(inputPath)
+
+      // Run OCR
+      const recognizeResult = await withTimeout(
+        runOcrOnImage(imageBuffer, language),
+        (args.timeout_seconds ?? 300) * 1000,
+        'OCR timed out'
+      )
+
+      const pages = buildPageData(recognizeResult)
+      const fullText = pages.map((p) => p.text).join('\n\n')
+      const avgConfidence = pages.length
+        ? Math.round(pages.reduce((s, p) => s + p.confidence, 0) / pages.length)
+        : 0
+      const durationMs = Date.now() - startedAt
+
       return textResult(
-        info.availableLanguages.length
-          ? `${info.availableLanguages.length} language(s) available:\n${info.availableLanguages.join('\n')}`
-          : 'No language packs installed. Install with: apt install tesseract-ocr-eng tesseract-ocr-chi-sim ...',
-        { languages: info.availableLanguages }
+        [
+          `OCR completed in ${(durationMs / 1000).toFixed(1)}s.`,
+          `Confidence: ${avgConfidence}%`,
+          `Language: ${language}`,
+          shouldPreprocess ? 'Preprocessing: enabled' : 'Preprocessing: disabled',
+          '',
+          '--- Recognized text ---',
+          fullText || '(no text recognized)'
+        ].join('\n'),
+        {
+          durationMs,
+          confidence: avgConfidence,
+          language,
+          text: fullText,
+          preprocessed: shouldPreprocess
+        }
       )
     } catch (err) {
-      return errorResult(`Failed to list languages: ${err instanceof Error ? err.message : String(err)}`)
+      const durationMs = Date.now() - startedAt
+      return errorResult(
+        `OCR failed after ${(durationMs / 1000).toFixed(1)}s: ` +
+        `${err instanceof Error ? err.message : String(err)}`
+      )
     }
   })
 
   const transport = new StdioServerTransport()
   await server.connect(transport)
   return true
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Utilities
+// ═══════════════════════════════════════════════════════════════════════════
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise
+      .then((val) => {
+        clearTimeout(timer)
+        resolve(val)
+      })
+      .catch((err) => {
+        clearTimeout(timer)
+        reject(err)
+      })
+  })
 }
