@@ -17,9 +17,11 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { harden } from 'rehype-harden'
-import type { PluggableList } from 'unified'
 import { useTranslation } from 'react-i18next'
+import {
+  isSafeExternalHref,
+  safeSanitizeOnlyForRenderer
+} from '@shared/markdown-sanitize'
 import {
   resolveWriteMarkdownResource,
   resolveWriteMarkdownResourcePath
@@ -45,19 +47,6 @@ type Props = {
 type CodeProps = DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> & {
   node?: { tagName?: string }
 }
-
-export const writeMarkdownHardenOptions = {
-  defaultOrigin: 'https://deepseek-gui.local',
-  allowedLinkPrefixes: ['*'],
-  allowedImagePrefixes: ['*']
-}
-
-const rehypePlugins = [
-  [
-    harden,
-    writeMarkdownHardenOptions
-  ]
-] as unknown as PluggableList
 
 const LANGUAGE_REGEX = /language-([^\s]+)/
 const TRAILING_NEWLINES_REGEX = /\n+$/
@@ -362,14 +351,23 @@ function WriteMarkdownPreviewContent({ content, isMarkdown, filePath }: Props): 
     <div className="ds-markdown write-markdown-preview min-h-full text-ds-ink">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
+        rehypePlugins={safeSanitizeOnlyForRenderer}
         components={{
           a: ({ href, children, ...props }): ReactNode => (
             <a
               {...props}
               href={href}
               onClick={(event) => {
-                if (!href) return
+                // Guard the click: even if a future plugin order change
+                // bypasses `rehype-harden`, this rejects `javascript:`
+                // and any non-https URL before it can run.
+                if (!isSafeExternalHref(href) || !href) {
+                  event.preventDefault()
+                  if (import.meta.env.DEV) {
+                    console.warn('[WriteMarkdownPreview] blocked unsafe href', href)
+                  }
+                  return
+                }
                 event.preventDefault()
                 void window.dsGui?.openExternal?.(href)?.catch(() => undefined)
               }}

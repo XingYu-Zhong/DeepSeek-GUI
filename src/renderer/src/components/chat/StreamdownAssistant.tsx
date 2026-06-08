@@ -1,13 +1,16 @@
 import type { ComponentPropsWithRef, MouseEvent, ReactElement } from 'react'
 import { Streamdown, type AnimateOptions, type StreamdownProps } from 'streamdown'
 import remarkGfm from 'remark-gfm'
-import { harden } from 'rehype-harden'
 import 'streamdown/styles.css'
 import { parseFileReferenceHref, rehypeFileReferences } from '../../lib/file-references'
 import { useValidatedFileReference } from '../../lib/file-reference-validation'
 import { openWorkspacePathInEditor } from '../../lib/open-workspace-path'
 import { previewWorkspaceFile } from '../../lib/workspace-file-preview'
 import { useChatStore } from '../../store/chat-store'
+import {
+  isSafeExternalHref,
+  safeRehypePluginsForChatBubble
+} from '@shared/markdown-sanitize'
 import { StreamdownCode } from './StreamdownCode'
 
 /**
@@ -24,14 +27,17 @@ const STREAMING_ANIMATED: AnimateOptions = {
   animation: 'fadeIn'
 }
 
+// `rehypeFileReferences` rewrites workspace-relative file paths to
+// `deepseek-file:` URIs (validated against the workspace root by
+// `useValidatedFileReference` below). It must run BEFORE the shared
+// harden + sanitize plugins so that:
+//   1. The file-reference linker has first crack at any path-shaped
+//      href (the sanitize plugin would otherwise strip our custom
+//      `data-file-target` attributes).
+//   2. The shared sanitizer only ever sees already-resolved URLs.
 const rehypePlugins = [
   rehypeFileReferences,
-  [
-    harden,
-    {
-      allowedLinkPrefixes: ['*']
-    }
-  ]
+  ...safeRehypePluginsForChatBubble
 ] satisfies StreamdownProps['rehypePlugins']
 
 const components = {
@@ -50,7 +56,7 @@ function StreamdownLink({
   const workspaceRoot = useChatStore((s) => s.workspaceRoot)
   const fileTarget = parseFileReferenceHref(href)
   const validation = useValidatedFileReference(fileTarget, workspaceRoot)
-  const isExternal = href ? /^(https?:|mailto:)/i.test(href) : false
+  const isExternal = isSafeExternalHref(href)
   const cleanClassName = className?.replace(/\bds-file-reference-link\b/g, '').trim()
 
   if (fileTarget && validation.status !== 'valid') {
@@ -73,7 +79,10 @@ function StreamdownLink({
       return
     }
 
-    if (isExternal && href && typeof window.dsGui?.openExternal === 'function') {
+    // isSafeExternalHref is the second layer of defence against
+    // javascript:/data: URLs in case the plugin order ever changes
+    // and the rehype-harden URL rewrite is bypassed.
+    if (href && isExternal && typeof window.dsGui?.openExternal === 'function') {
       event.preventDefault()
       void window.dsGui.openExternal(href).catch(() => undefined)
     }

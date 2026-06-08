@@ -9,6 +9,7 @@ import { createElement, type ComponentPropsWithoutRef, type ReactNode } from 're
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { safeSanitizeOnlyForRenderer } from '../../shared/markdown-sanitize'
 import type {
   WriteExportFormat,
   WriteExportPayload,
@@ -322,6 +323,7 @@ function renderMarkdownFragment(content: string, sourcePath: string): string {
       ReactMarkdown,
       {
         remarkPlugins: [remarkGfm],
+        rehypePlugins: safeSanitizeOnlyForRenderer,
         components: {
           a: ({
             href,

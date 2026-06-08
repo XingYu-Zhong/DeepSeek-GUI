@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { safeSanitizeOnlyForRenderer } from '@shared/markdown-sanitize'
 import { useChatStore } from '../../store/chat-store'
 import type { ChatBlock } from '../../agent/types'
 
@@ -129,7 +130,12 @@ function SideMessageBubble({ block }: { block: ChatBlock }): ReactElement | null
         {streaming ? (
           <span>{block.text}</span>
         ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={safeSanitizeOnlyForRenderer}
+          >
+            {block.text}
+          </ReactMarkdown>
         )}
       </div>
     )
@@ -138,7 +144,12 @@ function SideMessageBubble({ block }: { block: ChatBlock }): ReactElement | null
     return (
       <div className="rounded-[12px] border border-ds-border-muted bg-ds-card/55 px-2.5 py-2 text-[12px] leading-5 text-ds-muted">
         <div className="ds-markdown">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={safeSanitizeOnlyForRenderer}
+          >
+            {block.text}
+          </ReactMarkdown>
         </div>
       </div>
     )

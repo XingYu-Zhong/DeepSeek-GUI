@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { harden } from 'rehype-harden'
 import {
   resolveWriteMarkdownResource,
   resolveWriteMarkdownResourcePath,
-  writePathToFileUrl,
-  writeMarkdownHardenOptions
+  writePathToFileUrl
 } from '../components/write/WriteMarkdownPreview'
+import { safeSanitizeOnlyForRenderer } from '@shared/markdown-sanitize'
 import {
   WRITE_QUOTE_ORIGINAL_END,
   WRITE_QUOTE_ORIGINAL_START,
@@ -105,8 +104,13 @@ describe('write quoted selections', () => {
 })
 
 describe('write markdown preview resources', () => {
-  it('uses a rehype-harden config that can initialize without crashing preview', () => {
-    expect(() => harden(writeMarkdownHardenOptions)).not.toThrow()
+  it('exposes a sanitize plugin list that initializes without crashing preview', () => {
+    // The shared sanitize plugin list is what WriteMarkdownPreview now
+    // uses (replacing the prior rehype-harden + URL wildcards config,
+    // which did not strip dangerous HTML elements like <script> or
+    // event-handler attributes).
+    expect(Array.isArray(safeSanitizeOnlyForRenderer)).toBe(true)
+    expect(safeSanitizeOnlyForRenderer.length).toBeGreaterThan(0)
   })
 
   it('resolves relative image paths from the current markdown file', () => {
