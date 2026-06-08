@@ -43,6 +43,7 @@
     "@codemirror/view": "^6.43.0",
     "@larksuiteoapi/node-sdk": "^1.64.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opendataloader/pdf": "^2.4.7",
     "@tencent-weixin/openclaw-weixin": "2.4.3",
     "better-sqlite3": "^12.10.0",
     "electron-store": "^10.1.0",

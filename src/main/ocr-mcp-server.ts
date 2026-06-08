@@ -30,12 +30,34 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([
 // lifecycle and serialization correctly across all environments.
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * OCR a file by encoding it as a base64 data URL.
+ *
+ * tesseract.js internally reads the file and sends the resulting
+ * Uint8Array via worker.postMessage(). In Electron's V8, a
+ * Uint8Array backed by a file-read Buffer has a non-transferable
+ * ArrayBuffer that causes "Unable to deserialize cloned data".
+ *
+ * Passing a data: URL forces tesseract.js to decode via
+ * Buffer.from(base64String, 'base64'), which creates a fresh
+ * Uint8Array with a cloneable backing store.
+ */
 async function ocrFile(
   filePath: string,
   language: string,
   options?: { pdfRenderDPI?: number }
 ): Promise<RecognizeResult> {
-  return recognize(filePath, language, {
+  const buf = await readFile(filePath)
+  const ext = extname(filePath).toLowerCase()
+  const mime = ext === '.png' ? 'image/png'
+    : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+    : ext === '.tiff' || ext === '.tif' ? 'image/tiff'
+    : ext === '.bmp' ? 'image/bmp'
+    : ext === '.webp' ? 'image/webp'
+    : 'image/png'
+  const dataUrl = `data:${mime};base64,${buf.toString('base64')}`
+
+  return recognize(dataUrl, language, {
     ...options,
     errorHandler: (err) => {
       console.error('[ocr-mcp] tesseract error:', err.message)
