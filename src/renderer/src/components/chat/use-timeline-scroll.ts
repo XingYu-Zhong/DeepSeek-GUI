@@ -147,7 +147,15 @@ export function useTimelineScroll({
       window.cancelAnimationFrame(scrollFrameRef.current)
       scrollFrameRef.current = null
     }
-    endRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+    // Double-rAF: defer scroll until after visibleTurnCount has been
+    // re-derived and the extra turns have been painted. A single rAF
+    // fires before the state-update from the re-derive effect commits.
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null
+        endRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+      })
+    })
   }, [activeThreadId, endRef])
 
   // Cleanup any pending rAF on unmount.
