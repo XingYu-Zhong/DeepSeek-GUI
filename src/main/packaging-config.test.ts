@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 const builderConfig = require('../../electron-builder.config.cjs')
 const afterPack = require('../../scripts/after-pack.cjs')
+const macNotarize = require('../../scripts/mac-notarize.cjs')
 
 const tempRoots: string[] = []
 
@@ -134,6 +135,33 @@ describe('electron-builder Kun packaging', () => {
 
     expect(signedConfig.mac.identity).toBeUndefined()
     expect(signedConfig.mac.hardenedRuntime).toBe(true)
+    expect(signedConfig.mac.forceCodeSigning).toBe(true)
     expect(signedConfig.mac.timestamp).toBe('http://timestamp.apple.com/ts01')
+  })
+
+  it('checks timestamp candidates across nested macOS signed code', () => {
+    const root = tempRoot()
+    const appBundle = join(root, 'DeepSeek GUI.app')
+    const mainExecutable = join(appBundle, 'Contents/MacOS/DeepSeek GUI')
+    const framework = join(appBundle, 'Contents/Frameworks/Electron Framework.framework')
+    const nativeAddon = join(
+      appBundle,
+      'Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node'
+    )
+    const resourceScript = join(appBundle, 'Contents/Resources/postinstall.sh')
+
+    touch(mainExecutable)
+    touch(join(framework, 'Versions/A/Electron Framework'))
+    touch(nativeAddon)
+    touch(resourceScript)
+    chmodSync(mainExecutable, 0o755)
+    chmodSync(resourceScript, 0o755)
+
+    expect(macNotarize._internals.collectSignedCodeCandidates(appBundle)).toEqual([
+      appBundle,
+      framework,
+      mainExecutable,
+      nativeAddon
+    ])
   })
 })

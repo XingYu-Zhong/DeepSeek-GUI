@@ -1,5 +1,5 @@
 const { execFileSync, spawnSync } = require('node:child_process')
-const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs')
+const { existsSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 
@@ -42,28 +42,71 @@ function runNotaryToolJson(args) {
   }
 }
 
-function verifySecureTimestamp(appBundle) {
-  execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appBundle], {
-    stdio: 'inherit'
-  })
+function isBundleLike(path) {
+  return /\.(app|appex|bundle|framework|plugin|xpc)$/i.test(path)
+}
 
-  const result = spawnSync('codesign', ['--display', '--verbose=4', appBundle], {
+function isLikelySignedFile(path, info) {
+  if (/\.(dylib|node|so)$/i.test(path)) return true
+  return info.isFile() && (info.mode & 0o111) !== 0 && /\/Contents\/(?:MacOS|Frameworks)\//.test(path)
+}
+
+function collectSignedCodeCandidates(appBundle) {
+  const candidates = new Set([appBundle])
+  const stack = [appBundle]
+
+  while (stack.length) {
+    const current = stack.pop()
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      const info = lstatSync(path)
+      if (info.isSymbolicLink()) continue
+
+      if (info.isDirectory()) {
+        if (isBundleLike(path)) candidates.add(path)
+        stack.push(path)
+        continue
+      }
+
+      if (isLikelySignedFile(path, info)) {
+        candidates.add(path)
+      }
+    }
+  }
+
+  return Array.from(candidates).sort()
+}
+
+function readCodeSignatureDetails(path) {
+  const result = spawnSync('codesign', ['--display', '--verbose=4', path], {
     encoding: 'utf8'
   })
   if (result.error) {
     throw result.error
   }
   const details = `${result.stdout || ''}${result.stderr || ''}`
-  console.log(details.trim())
 
   if (result.status !== 0) {
-    throw new Error(`codesign --display failed with status ${result.status}`)
+    throw new Error(`codesign --display failed for ${path} with status ${result.status}\n${details}`)
   }
 
-  if (!/^Timestamp=/m.test(details)) {
-    throw new Error(
-      'The app signature is missing a secure timestamp. Ensure electron-builder mac.timestamp is enabled.'
-    )
+  return details
+}
+
+function verifySecureTimestamps(appBundle) {
+  execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appBundle], {
+    stdio: 'inherit'
+  })
+
+  const candidates = collectSignedCodeCandidates(appBundle)
+  console.log(`[mac-notarize] Verifying secure timestamps for ${candidates.length} signed code candidate(s).`)
+  for (const candidate of candidates) {
+    const details = readCodeSignatureDetails(candidate)
+    if (!/^Timestamp=/m.test(details)) {
+      throw new Error(
+        `The signature is missing a secure timestamp: ${candidate}. Ensure electron-builder mac.timestamp is enabled.`
+      )
+    }
   }
 }
 
@@ -86,7 +129,7 @@ exports.default = async function afterSign(context) {
   const zipPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}-notary.zip`)
 
   try {
-    verifySecureTimestamp(appBundle)
+    verifySecureTimestamps(appBundle)
 
     execFileSync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', appBundle, zipPath], {
       stdio: 'inherit'
@@ -134,4 +177,11 @@ exports.default = async function afterSign(context) {
     rmSync(zipPath, { force: true })
     creds.cleanup?.()
   }
+}
+
+exports._internals = {
+  collectSignedCodeCandidates,
+  isBundleLike,
+  isLikelySignedFile,
+  readCodeSignatureDetails
 }

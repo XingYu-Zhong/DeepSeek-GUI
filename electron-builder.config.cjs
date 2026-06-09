@@ -112,6 +112,7 @@ module.exports = {
     // We notarize in scripts/mac-notarize.cjs so APPLE_API_KEY_BASE64 can be supported.
     notarize: false,
     hardenedRuntime: hasExplicitMacSigningIdentity,
+    forceCodeSigning: hasExplicitMacSigningIdentity,
     timestamp: hasExplicitMacSigningIdentity ? 'http://timestamp.apple.com/ts01' : null,
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',

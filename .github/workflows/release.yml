@@ -60,6 +60,7 @@ jobs:
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      CSC_FOR_PULL_REQUEST: 'true'
     steps:
       - name: Check out merge commit
         uses: actions/checkout@v4
