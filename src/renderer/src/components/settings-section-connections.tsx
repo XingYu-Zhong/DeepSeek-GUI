@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react'
 import type { AppSettingsV1, SshConnectionV1 } from '@shared/app-settings'
-import { Loader2, Plus, Server, Terminal, Trash2 } from 'lucide-react'
+import { FolderOpen, Loader2, Plus, Server, Terminal, Trash2 } from 'lucide-react'
+import { buildSshWorkspaceUri } from '@shared/ssh-workspace'
 import {
   InlineNoticeView,
   SettingsCard,
@@ -19,6 +20,10 @@ function newConnection(index: number): SshConnectionV1 {
     host: '',
     user: '',
     port: 22,
+    authMethod: 'agent',
+    password: '',
+    identityFile: '',
+    passphrase: '',
     remotePath: '~',
     enabled: true,
     createdAt: now,
@@ -106,6 +111,25 @@ export function ConnectionsSettingsSection({ ctx }: { ctx: Record<string, any> }
     } finally {
       setTestingId(null)
     }
+  }
+
+  const openRemoteProject = (connection: SshConnectionV1): void => {
+    if (!connection.host.trim()) {
+      setNotices((current) => ({
+        ...current,
+        [connection.id]: { tone: 'error', message: t('sshConnectionHostRequired') }
+      }))
+      return
+    }
+    const remotePath = connection.remotePath.trim() || '~'
+    update({ workspaceRoot: buildSshWorkspaceUri(connection.id, remotePath) })
+    setNotices((current) => ({
+      ...current,
+      [connection.id]: {
+        tone: 'success',
+        message: t('sshConnectionOpenProjectApplied')
+      }
+    }))
   }
 
   const tabButtonClass = (target: ConnectionsTab): string =>
@@ -236,6 +260,70 @@ export function ConnectionsSettingsSection({ ctx }: { ctx: Record<string, any> }
                             </label>
                           </div>
 
+                          <div className="mt-3 grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
+                            <label className="min-w-0 text-[12px] font-medium text-ds-muted">
+                              {t('sshConnectionAuthMethod')}
+                              <select
+                                className={inputClass('mt-1')}
+                                value={connection.authMethod}
+                                onChange={(event) =>
+                                  patchConnection(connection.id, {
+                                    authMethod: event.target.value as SshConnectionV1['authMethod']
+                                  })
+                                }
+                              >
+                                <option value="agent">{t('sshConnectionAuthAgent')}</option>
+                                <option value="password">{t('sshConnectionAuthPassword')}</option>
+                                <option value="identityFile">{t('sshConnectionAuthIdentityFile')}</option>
+                              </select>
+                            </label>
+                            {connection.authMethod === 'password' ? (
+                              <label className="min-w-0 text-[12px] font-medium text-ds-muted">
+                                {t('sshConnectionPassword')}
+                                <input
+                                  type="password"
+                                  className={inputClass('mt-1')}
+                                  value={connection.password}
+                                  placeholder={t('sshConnectionPasswordPlaceholder')}
+                                  onChange={(event) =>
+                                    patchConnection(connection.id, { password: event.target.value })
+                                  }
+                                />
+                              </label>
+                            ) : connection.authMethod === 'identityFile' ? (
+                              <label className="min-w-0 text-[12px] font-medium text-ds-muted">
+                                {t('sshConnectionIdentityFile')}
+                                <input
+                                  className={inputClass('mt-1')}
+                                  value={connection.identityFile}
+                                  placeholder={t('sshConnectionIdentityFilePlaceholder')}
+                                  onChange={(event) =>
+                                    patchConnection(connection.id, { identityFile: event.target.value })
+                                  }
+                                />
+                              </label>
+                            ) : (
+                              <div className="rounded-xl border border-ds-border-muted bg-ds-card px-3 py-2 text-[12px] leading-5 text-ds-muted">
+                                {t('sshConnectionAuthAgentDesc')}
+                              </div>
+                            )}
+                          </div>
+
+                          {connection.authMethod === 'identityFile' ? (
+                            <label className="mt-3 block min-w-0 text-[12px] font-medium text-ds-muted">
+                              {t('sshConnectionPassphrase')}
+                              <input
+                                type="password"
+                                className={inputClass('mt-1')}
+                                value={connection.passphrase}
+                                placeholder={t('sshConnectionPassphrasePlaceholder')}
+                                onChange={(event) =>
+                                  patchConnection(connection.id, { passphrase: event.target.value })
+                                }
+                              />
+                            </label>
+                          ) : null}
+
                           <label className="mt-3 block min-w-0 text-[12px] font-medium text-ds-muted">
                             {t('sshConnectionRemotePath')}
                             <input
@@ -261,6 +349,15 @@ export function ConnectionsSettingsSection({ ctx }: { ctx: Record<string, any> }
                                 <Terminal className="h-4 w-4" strokeWidth={1.75} />
                               )}
                               {t('sshConnectionTest')}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-ds-border bg-ds-card px-3 py-1.5 text-[13px] font-medium text-ds-ink shadow-sm transition hover:bg-ds-hover disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={!connection.enabled}
+                              onClick={() => openRemoteProject(connection)}
+                            >
+                              <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
+                              {t('sshConnectionOpenProject')}
                             </button>
                             <button
                               type="button"

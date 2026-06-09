@@ -1,3 +1,5 @@
+import { isSshWorkspacePath } from '@shared/ssh-workspace'
+
 function normalizePathForMatch(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
@@ -5,6 +7,7 @@ function normalizePathForMatch(path: string): string {
 export function workspaceRootIdentityKey(path?: string): string {
   const trimmed = path?.trim() ?? ''
   if (!trimmed) return ''
+  if (isSshWorkspacePath(trimmed)) return trimmed
   const normalized = normalizePathForMatch(trimmed)
   if (
     normalized === '~/.deepseekgui/default_workspace'
@@ -51,6 +54,7 @@ export function isInternalDeepSeekGuiWorkspace(path?: string): boolean {
 export function normalizeWorkspaceRoot(path?: string): string {
   const trimmed = path?.trim() ?? ''
   if (!trimmed) return ''
+  if (isSshWorkspacePath(trimmed)) return trimmed
   if (isInternalTemporaryWorkspace(trimmed)) return ''
   return trimmed
 }

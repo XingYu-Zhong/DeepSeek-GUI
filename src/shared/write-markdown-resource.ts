@@ -1,3 +1,11 @@
+import {
+  appendSshWorkspacePath,
+  buildSshWorkspaceUri,
+  dirnameSshWorkspaceUri,
+  isSshWorkspacePath,
+  parseSshWorkspaceUri
+} from './ssh-workspace'
+
 function normalizePath(value: string): string {
   return value.replaceAll('\\', '/')
 }
@@ -26,6 +34,7 @@ function normalizeJoinedPath(pathname: string): string {
 }
 
 export function writePathToFileUrl(pathname: string): string {
+  if (isSshWorkspacePath(pathname)) return pathname
   const normalized = normalizeJoinedPath(pathname)
   const encoded = normalized
     .split('/')
@@ -66,8 +75,17 @@ export function resolveWriteMarkdownResourcePath(
 ): string | undefined {
   if (!src?.trim() || !filePath) return undefined
   const value = src.trim()
-  if (isExplicitWriteResourceUrl(value) || value.startsWith('#')) return undefined
+  if (isExplicitWriteResourceUrl(value) || value.startsWith('#')) {
+    return isSshWorkspacePath(value) ? value : undefined
+  }
   const [pathname, suffix = ''] = value.split(/([?#].*)/, 2)
+  if (isSshWorkspacePath(filePath)) {
+    if (suffix) return undefined
+    const parsed = parseSshWorkspaceUri(filePath)
+    return pathname.startsWith('/') || pathname.startsWith('~')
+      ? buildSshWorkspaceUri(parsed.connectionId, pathname)
+      : appendSshWorkspacePath(dirnameSshWorkspaceUri(filePath), pathname)
+  }
   const baseDir = dirnamePortable(filePath)
   if (!baseDir || suffix) return undefined
   const resolved = pathname.startsWith('/')

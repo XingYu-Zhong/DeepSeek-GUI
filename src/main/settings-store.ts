@@ -29,6 +29,7 @@ import {
   type ClawImChannelV1,
   type ClawImConversationV1
 } from '../shared/app-settings'
+import { isSshWorkspacePath } from '../shared/ssh-workspace'
 
 export type { AppSettingsV1 }
 
@@ -57,11 +58,15 @@ export function expandHomePath(raw: string | null | undefined): string {
 }
 
 function normalizeWorkspaceRoot(raw: string | null | undefined): string {
-  return expandHomePath(raw) || DEFAULT_WORKSPACE_ROOT
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  if (isSshWorkspacePath(value)) return value
+  return expandHomePath(value) || DEFAULT_WORKSPACE_ROOT
 }
 
 function normalizeWriteWorkspaceRoot(raw: string | null | undefined): string {
-  return expandHomePath(raw) || DEFAULT_WRITE_WORKSPACE_ROOT_ABSOLUTE
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  if (isSshWorkspacePath(value)) return value
+  return expandHomePath(value) || DEFAULT_WRITE_WORKSPACE_ROOT_ABSOLUTE
 }
 
 function sanitizePathSegment(raw: string | null | undefined, fallback: string): string {
@@ -151,6 +156,7 @@ function serializeSettingsForDisk(settings: AppSettingsV1): string {
 
 export async function ensureWorkspaceRootExists(workspaceRoot: string): Promise<string> {
   const normalized = normalizeWorkspaceRoot(workspaceRoot)
+  if (isSshWorkspacePath(normalized)) return normalized
   await mkdir(normalized, { recursive: true })
   return normalized
 }
@@ -158,9 +164,11 @@ export async function ensureWorkspaceRootExists(workspaceRoot: string): Promise<
 async function ensureWriteWorkspaceRootsExist(settings: AppSettingsV1): Promise<void> {
   for (const workspaceRoot of settings.write.workspaces) {
     if (!workspaceRoot) continue
+    if (isSshWorkspacePath(workspaceRoot)) continue
     await mkdir(workspaceRoot, { recursive: true })
   }
 
+  if (isSshWorkspacePath(settings.write.defaultWorkspaceRoot)) return
   const welcomePath = join(settings.write.defaultWorkspaceRoot, 'welcome.md')
   try {
     await writeFile(welcomePath, WELCOME_MARKDOWN, { encoding: 'utf8', flag: 'wx' })

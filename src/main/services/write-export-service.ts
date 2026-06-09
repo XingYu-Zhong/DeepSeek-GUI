@@ -16,6 +16,12 @@ import type {
   WriteRichClipboardPayload,
   WriteRichClipboardResult
 } from '../../shared/write-export'
+import {
+  dirnameSshWorkspaceUri,
+  isSshWorkspacePath,
+  parseSshWorkspaceUri,
+  sshRemoteBasename
+} from '../../shared/ssh-workspace'
 import { resolveWriteMarkdownResource } from '../../shared/write-markdown-resource'
 import { resolveWorkspaceFile } from './workspace-service'
 
@@ -221,8 +227,17 @@ function isMarkdownFile(filePath: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(filePath)
 }
 
+function sourceBasename(filePath: string): string {
+  if (!isSshWorkspacePath(filePath)) return basename(filePath)
+  try {
+    return sshRemoteBasename(parseSshWorkspaceUri(filePath).remotePath)
+  } catch {
+    return basename(filePath)
+  }
+}
+
 function basenameWithoutExtension(filePath: string): string {
-  const name = basename(filePath)
+  const name = sourceBasename(filePath)
   const extension = extname(name)
   return extension ? name.slice(0, -extension.length) : name
 }
@@ -267,7 +282,13 @@ function ensureExportExtension(targetPath: string, format: WriteExportFormat): s
 }
 
 function defaultExportPath(sourcePath: string, format: WriteExportFormat): string {
-  return join(dirname(sourcePath), `${basenameWithoutExtension(sourcePath)}${exportExtension(format)}`)
+  const fileName = buildWriteExportFileName(sourcePath, format)
+  return isSshWorkspacePath(sourcePath) ? fileName : join(dirname(sourcePath), fileName)
+}
+
+function exportBaseHref(sourcePath: string): string {
+  if (isSshWorkspacePath(sourcePath)) return `${dirnameSshWorkspaceUri(sourcePath)}/`
+  return pathToFileURL(`${dirname(sourcePath)}/`).href
 }
 
 async function localFileUrlToDataUri(value: string): Promise<string | null> {
@@ -379,7 +400,7 @@ export async function buildWriteExportHtmlDocument(options: {
     sourcePath: options.sourcePath,
     content: options.content
   })
-  const baseHref = pathToFileURL(`${dirname(options.sourcePath)}/`).href
+  const baseHref = exportBaseHref(options.sourcePath)
   const namespaces = options.wordCompatible
     ? ' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"'
     : ''
@@ -549,7 +570,7 @@ export async function exportWriteDocument(
         title,
         creator: 'DeepSeek GUI',
         keywords: ['markdown', 'export'],
-        description: `Exported from ${basename(sourcePath)}`,
+        description: `Exported from ${sourceBasename(sourcePath)}`,
         font: 'Arial',
         fontSize: 24
       })

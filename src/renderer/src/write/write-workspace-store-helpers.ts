@@ -15,6 +15,13 @@ import {
   type WriteInlineCompletionSettingsV1,
   type WriteSettingsV1
 } from '@shared/app-settings'
+import {
+  appendSshWorkspacePath,
+  dirnameSshWorkspaceUri,
+  isSshWorkspacePath,
+  parseSshWorkspaceUri,
+  sshRemoteBasename
+} from '@shared/ssh-workspace'
 import type { WorkspaceEntry } from '@shared/workspace-file'
 import { isWriteWorkspaceEntry } from '@shared/write-text-file'
 import i18n from '../i18n'
@@ -156,12 +163,16 @@ export function withResolvedInlineCompletionSettings(
 }
 
 export function writeBasenameFromPath(value: string): string {
+  if (isSshWorkspacePath(value)) {
+    return sshRemoteBasename(parseSshWorkspaceUri(value).remotePath)
+  }
   const normalized = normalizePath(value)
   const parts = normalized.split('/').filter(Boolean)
   return parts[parts.length - 1] || normalized
 }
 
 export function writeDirnameFromPath(value: string): string {
+  if (isSshWorkspacePath(value)) return dirnameSshWorkspaceUri(value)
   const normalized = normalizePath(value)
   const index = normalized.lastIndexOf('/')
   if (index <= 0) return normalized
@@ -169,11 +180,23 @@ export function writeDirnameFromPath(value: string): string {
 }
 
 export function writeJoinPath(base: string, next: string): string {
+  if (isSshWorkspacePath(base)) return appendSshWorkspacePath(base, next)
   if (!base) return next
   return `${normalizePath(base)}/${next.replace(/^\/+/, '')}`
 }
 
 export function writeRelativeToWorkspace(workspaceRoot: string, filePath: string): string {
+  if (isSshWorkspacePath(workspaceRoot) && isSshWorkspacePath(filePath)) {
+    const root = parseSshWorkspaceUri(workspaceRoot)
+    const file = parseSshWorkspaceUri(filePath)
+    if (root.connectionId === file.connectionId) {
+      const rootPath = normalizePath(root.remotePath)
+      const fileRemotePath = normalizePath(file.remotePath)
+      const prefix = `${rootPath}/`
+      if (rootPath && fileRemotePath.startsWith(prefix)) return fileRemotePath.slice(prefix.length)
+      if (rootPath === fileRemotePath) return writeBasenameFromPath(filePath)
+    }
+  }
   const normalizedRoot = normalizePath(workspaceRoot)
   const normalizedFile = normalizePath(filePath)
   const prefix = `${normalizedRoot}/`

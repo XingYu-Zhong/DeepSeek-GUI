@@ -1,9 +1,15 @@
+export type SshAuthMethodV1 = 'agent' | 'password' | 'identityFile'
+
 export type SshConnectionV1 = {
   id: string
   name: string
   host: string
   user: string
   port: number
+  authMethod: SshAuthMethodV1
+  password: string
+  identityFile: string
+  passphrase: string
   remotePath: string
   enabled: boolean
   createdAt: string
@@ -31,6 +37,10 @@ function normalizePort(value: unknown): number {
   return Math.max(1, Math.min(65_535, Math.round(port)))
 }
 
+function normalizeAuthMethod(value: unknown): SshAuthMethodV1 {
+  return value === 'password' || value === 'identityFile' ? value : 'agent'
+}
+
 function normalizeTimestamp(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, 128) : fallback
 }
@@ -53,6 +63,10 @@ export function normalizeSshConnection(
     host,
     user: cleanString(input?.user, 512),
     port: normalizePort(input?.port),
+    authMethod: normalizeAuthMethod(input?.authMethod),
+    password: cleanString(input?.password, 8_192),
+    identityFile: cleanString(input?.identityFile, 4_096),
+    passphrase: cleanString(input?.passphrase, 8_192),
     remotePath: cleanString(input?.remotePath, 4_096),
     enabled: input?.enabled !== false,
     createdAt: normalizeTimestamp(input?.createdAt, now),

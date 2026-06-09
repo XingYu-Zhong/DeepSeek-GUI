@@ -45,6 +45,7 @@
     "@larksuiteoapi/node-sdk": "^1.64.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tencent-weixin/openclaw-weixin": "2.4.3",
+    "@types/ssh2": "^1.15.5",
     "better-sqlite3": "^12.10.0",
     "electron-store": "^10.1.0",
     "electron-updater": "^6.8.3",
@@ -60,6 +61,7 @@
     "rehype-harden": "^1.1.8",
     "remark-gfm": "^4.0.1",
     "shiki": "^3.23.0",
+    "ssh2": "^1.17.0",
     "streamdown": "^2.5.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.3"

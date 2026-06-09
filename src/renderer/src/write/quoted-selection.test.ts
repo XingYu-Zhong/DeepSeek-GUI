@@ -117,6 +117,20 @@ describe('write markdown preview resources', () => {
     )
   })
 
+  it('resolves relative image paths from SSH workspace markdown files', () => {
+    const filePath = 'ssh://ssh-1/%2Fsrv%2Fapp%2Fdocs%2Fdraft.md'
+
+    expect(resolveWriteMarkdownResource('../img/cover.png', filePath)).toBe(
+      'ssh://ssh-1/%2Fsrv%2Fapp%2Fimg%2Fcover.png'
+    )
+    expect(resolveWriteMarkdownResourcePath('../img/cover.png', filePath)).toBe(
+      'ssh://ssh-1/%2Fsrv%2Fapp%2Fimg%2Fcover.png'
+    )
+    expect(resolveWriteMarkdownResource('/var/shared/logo.png', filePath)).toBe(
+      'ssh://ssh-1/%2Fvar%2Fshared%2Flogo.png'
+    )
+  })
+
   it('keeps explicit external URLs unchanged', () => {
     expect(resolveWriteMarkdownResource('https://example.com/a.png', '/tmp/workspace/docs/draft.md')).toBe('https://example.com/a.png')
     expect(resolveWriteMarkdownResourcePath('https://example.com/a.png', '/tmp/workspace/docs/draft.md')).toBeUndefined()

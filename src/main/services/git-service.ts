@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { GitBranchesResult } from '../../shared/git-branches'
+import { isSshWorkspacePath } from '../../shared/ssh-workspace'
 
 const execFileAsync = promisify(execFile)
 
@@ -33,6 +34,9 @@ export async function getGitBranches(workspaceRoot: string): Promise<GitBranches
   if (!cwd) {
     return { ok: false, reason: 'no_workspace', message: 'No working directory selected.' }
   }
+  if (isSshWorkspacePath(cwd)) {
+    return { ok: false, reason: 'error', message: 'Git branch controls are not supported for SSH workspaces yet.' }
+  }
   try {
     const repositoryRoot = (await runGit(cwd, ['rev-parse', '--show-toplevel'])).stdout.trim()
     const currentRaw = (await runGit(cwd, ['branch', '--show-current'])).stdout.trim()
@@ -64,6 +68,9 @@ export async function switchGitBranch(
   const branch = branchName.trim()
   if (!cwd) return { ok: false, reason: 'no_workspace', message: 'No working directory selected.' }
   if (!branch) return { ok: false, reason: 'error', message: 'Branch name is required.' }
+  if (isSshWorkspacePath(cwd)) {
+    return { ok: false, reason: 'error', message: 'Git branch controls are not supported for SSH workspaces yet.' }
+  }
   try {
     try {
       await runGit(cwd, ['switch', branch], 20_000)
@@ -84,6 +91,9 @@ export async function createAndSwitchGitBranch(
   const branch = branchName.trim()
   if (!cwd) return { ok: false, reason: 'no_workspace', message: 'No working directory selected.' }
   if (!branch) return { ok: false, reason: 'error', message: 'Branch name is required.' }
+  if (isSshWorkspacePath(cwd)) {
+    return { ok: false, reason: 'error', message: 'Git branch controls are not supported for SSH workspaces yet.' }
+  }
   try {
     await runGit(cwd, ['check-ref-format', '--branch', branch])
     try {

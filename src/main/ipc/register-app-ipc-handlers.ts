@@ -82,6 +82,7 @@ import {
   saveWorkspaceClipboardImage,
   writeWorkspaceFile
 } from '../services/workspace-service'
+import { isSshWorkspacePath } from '../../shared/ssh-workspace'
 import {
   clearWriteInlineCompletionDebugEntries,
   listWriteInlineCompletionDebugEntries,
@@ -662,6 +663,12 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   )
   ipcMain.handle('file:watch-workspace', async (event, payload: unknown) => {
     const request = parseIpcPayload('file:watch-workspace', workspaceFileWatchPayloadSchema, payload)
+    if (isSshWorkspacePath(request.workspaceRoot) || isSshWorkspacePath(request.path)) {
+      return {
+        ok: false as const,
+        message: 'Live file watching is not supported for SSH workspaces yet. Use refresh to reload the file.'
+      }
+    }
     const initial = await readWorkspaceFile(request)
     let watchedPath: string
     let initialContent: string

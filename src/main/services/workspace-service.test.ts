@@ -16,9 +16,16 @@ vi.mock('electron', () => ({
   }
 }))
 
+vi.mock('./ssh-service', () => ({
+  runSshFileOperation: vi.fn()
+}))
+
 import { clipboard } from 'electron'
+import { runSshFileOperation } from './ssh-service'
+import type { AppSettingsV1 } from '../../shared/app-settings'
 
 import {
+  configureWorkspaceFileSettingsProvider,
   createWorkspaceDirectory,
   createWorkspaceFile,
   deleteWorkspaceEntry,
@@ -39,6 +46,8 @@ describe('workspace-service boundary checks', () => {
 
   beforeEach(async () => {
     vi.mocked(clipboard.readImage).mockReset()
+    vi.mocked(runSshFileOperation).mockReset()
+    configureWorkspaceFileSettingsProvider(null)
     rootDir = await mkdtemp(join(tmpdir(), 'ds-gui-workspace-'))
     workspaceRoot = join(rootDir, 'workspace')
     outsideFile = join(rootDir, 'outside.txt')
@@ -176,6 +185,62 @@ describe('workspace-service boundary checks', () => {
     expect(await realpath(dirname(result.path))).toBe(await realpath(join(workspaceRoot, 'img')))
     expect(result.markdownPath.startsWith('../img/pasted-image-')).toBe(true)
     await expect(readFile(result.path)).resolves.toEqual(Buffer.from('fake-png-bytes'))
+  })
+
+  it('saves pasted clipboard images through SFTP for SSH workspaces', async () => {
+    const remoteWorkspaceRoot = 'ssh://ssh-1/%2Fsrv%2Fapp'
+    const currentFilePath = 'ssh://ssh-1/%2Fsrv%2Fapp%2Fdocs%2Fdraft.md'
+    configureWorkspaceFileSettingsProvider(async () => ({
+      connections: {
+        ssh: [{
+          id: 'ssh-1',
+          name: 'VPS',
+          host: 'vps.example.com',
+          user: 'deploy',
+          port: 22,
+          authMethod: 'agent',
+          password: '',
+          identityFile: '',
+          passphrase: '',
+          remotePath: '/srv/app',
+          enabled: true,
+          createdAt: '2026-06-09T00:00:00.000Z',
+          updatedAt: '2026-06-09T00:00:00.000Z'
+        }]
+      }
+    }) as AppSettingsV1)
+    vi.mocked(clipboard.readImage).mockReturnValue({
+      isEmpty: () => false,
+      toPNG: () => Buffer.from('remote-png-bytes')
+    } as Electron.NativeImage)
+    vi.mocked(runSshFileOperation).mockImplementation(async (_connection, request) => {
+      if (request.op !== 'writeBinary') return { ok: false, message: 'unexpected op' }
+      return {
+        ok: true,
+        path: request.path,
+        size: Buffer.byteLength(request.dataBase64, 'base64')
+      }
+    })
+
+    const result = await saveWorkspaceClipboardImage({
+      workspaceRoot: remoteWorkspaceRoot,
+      currentFilePath
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(runSshFileOperation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ssh-1', host: 'vps.example.com' }),
+      expect.objectContaining({
+        op: 'writeBinary',
+        root: '/srv/app',
+        path: expect.stringMatching(/^\/srv\/app\/img\/pasted-image-.+\.png$/),
+        dataBase64: Buffer.from('remote-png-bytes').toString('base64')
+      })
+    )
+    expect(result.path).toMatch(/^ssh:\/\/ssh-1\/%2Fsrv%2Fapp%2Fimg%2Fpasted-image-.+\.png$/)
+    expect(result.markdownPath).toMatch(/^\.\.\/img\/pasted-image-.+\.png$/)
   })
 
   it('reads clipboard images as PNG base64 without writing workspace files', async () => {

@@ -11,6 +11,7 @@ import type {
   EditorOpenResult,
   OpenEditorPathOptions
 } from '../../shared/editor'
+import { isSshWorkspacePath } from '../../shared/ssh-workspace'
 import { pathExists, resolveOpenTargetPath } from './workspace-paths'
 
 const execFileAsync = promisify(execFile)
@@ -42,6 +43,8 @@ type ResolvedEditor = EditorInfo & {
 
 const DEFAULT_EDITOR_ID = 'system'
 const EDITOR_ICON_PX = 18
+const SSH_EXTERNAL_EDITOR_MESSAGE =
+  'SSH workspace files can be edited in the built-in Write view, but opening them in a local external editor is not supported yet.'
 
 const EDITOR_CANDIDATES: EditorCandidate[] = [
   {
@@ -476,6 +479,13 @@ async function openWithResolvedEditor(
 
 export async function openEditorPath(payload: OpenEditorPathOptions): Promise<EditorOpenResult> {
   try {
+    if (isSshWorkspacePath(payload.path) || isSshWorkspacePath(payload.workspaceRoot)) {
+      return {
+        ok: false,
+        message: SSH_EXTERNAL_EDITOR_MESSAGE
+      }
+    }
+
     const editors = await getAvailableEditors()
     const fallbackId = defaultEditorId(editors)
     const requestedId = payload.editorId?.trim()

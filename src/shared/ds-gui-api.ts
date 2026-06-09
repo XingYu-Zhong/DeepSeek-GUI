@@ -110,7 +110,10 @@ export type UpstreamModelsResult =
   | { ok: false; message: string }
 export type SshConnectionTestPayload =
   Pick<SshConnectionV1, 'host'> &
-  Partial<Pick<SshConnectionV1, 'user' | 'port' | 'remotePath'>>
+  Partial<Pick<
+    SshConnectionV1,
+    'user' | 'port' | 'authMethod' | 'password' | 'identityFile' | 'passphrase' | 'remotePath'
+  >>
 export type SshConnectionTestResult =
   | { ok: true; message: string }
   | { ok: false; message: string }

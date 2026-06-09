@@ -463,6 +463,10 @@ const sshConnectionPatchSchema = z.object({
   host: z.string().trim().max(512).optional(),
   user: z.string().trim().max(512).optional(),
   port: z.number().int().min(1).max(65_535).optional(),
+  authMethod: z.enum(['agent', 'password', 'identityFile']).optional(),
+  password: z.string().max(MAX_BODY_BYTES).optional(),
+  identityFile: defaultPathSchema,
+  passphrase: z.string().max(MAX_BODY_BYTES).optional(),
   remotePath: defaultPathSchema,
   enabled: z.boolean().optional(),
   createdAt: z.string().max(128).optional(),
@@ -524,6 +528,10 @@ export const sshConnectionTestPayloadSchema = z.object({
   host: z.string().trim().min(1).max(512),
   user: z.string().trim().max(512).optional(),
   port: z.number().int().min(1).max(65_535).optional(),
+  authMethod: z.enum(['agent', 'password', 'identityFile']).optional(),
+  password: z.string().max(MAX_BODY_BYTES).optional(),
+  identityFile: defaultPathSchema,
+  passphrase: z.string().max(MAX_BODY_BYTES).optional(),
   remotePath: defaultPathSchema
 }).strict()
 

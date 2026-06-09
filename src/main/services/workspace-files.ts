@@ -46,6 +46,14 @@ import {
   resolveWorkspaceDirectory,
   validateEntryName
 } from './workspace-paths'
+import {
+  buildSshWorkspaceUri,
+  isSshWorkspacePath,
+  joinSshRemotePath,
+  parseSshWorkspaceUri
+} from '../../shared/ssh-workspace'
+import type { AppSettingsV1, SshConnectionV1 } from '../../shared/app-settings'
+import { runSshFileOperation } from './ssh-service'
 
 const MAX_FILE_PREVIEW_BYTES = 1_500_000
 const MAX_IMAGE_PREVIEW_BYTES = 12 * 1024 * 1024
@@ -62,10 +70,268 @@ const WORKSPACE_IMAGE_MIME_BY_EXT = new Map([
   ['.ico', 'image/x-icon']
 ])
 
+let workspaceSettingsProvider: (() => Promise<AppSettingsV1>) | null = null
+
+export function configureWorkspaceFileSettingsProvider(
+  provider: (() => Promise<AppSettingsV1>) | null
+): void {
+  workspaceSettingsProvider = provider
+}
+
+function shouldUseSshWorkspace(payload: { path?: string; workspaceRoot?: string }): boolean {
+  return isSshWorkspacePath(payload.workspaceRoot) || isSshWorkspacePath(payload.path)
+}
+
+async function sshConnectionForWorkspaceUri(uri: string): Promise<{
+  connection: SshConnectionV1
+  root: string
+  path: string
+  connectionId: string
+}> {
+  if (!workspaceSettingsProvider) {
+    throw new Error('SSH workspace settings are not available.')
+  }
+  const parsed = parseSshWorkspaceUri(uri)
+  const settings = await workspaceSettingsProvider()
+  const connection = settings.connections.ssh.find((item) => item.id === parsed.connectionId)
+  if (!connection || !connection.enabled) {
+    throw new Error('SSH connection is missing or disabled.')
+  }
+  const root = connection.remotePath.trim() || '~'
+  return {
+    connection,
+    root,
+    path: parsed.remotePath,
+    connectionId: parsed.connectionId
+  }
+}
+
+function resolveSshTargetUri(path: string | undefined, workspaceRoot?: string): string {
+  const rawPath = path?.trim() ?? ''
+  const rawRoot = workspaceRoot?.trim() ?? ''
+  if (isSshWorkspacePath(rawPath)) return rawPath
+  if (isSshWorkspacePath(rawRoot)) return rawRoot
+  throw new Error('SSH workspace URI is required.')
+}
+
+function sshEntryExt(name: string, type: 'file' | 'directory'): string {
+  return type === 'directory' ? '' : extensionFromName(name)
+}
+
+function sshRemotePathToUri(connectionId: string, path: string): string {
+  return buildSshWorkspaceUri(connectionId, path)
+}
+
+function normalizeSshRemotePathForRelative(value: string): string {
+  return value.trim().replace(/\0/g, '').replaceAll('\\', '/').replace(/\/+$/, '')
+}
+
+function sshRemoteDirnameForRelative(value: string): string {
+  const normalized = normalizeSshRemotePathForRelative(value)
+  if (!normalized || normalized === '/' || normalized === '~') return normalized || '~'
+  const slash = normalized.lastIndexOf('/')
+  if (slash < 0) return '~'
+  if (slash === 0) return '/'
+  return normalized.slice(0, slash)
+}
+
+function relativeSshRemotePath(fromDirectory: string, targetPath: string): string {
+  const from = normalizeSshRemotePathForRelative(fromDirectory)
+  const target = normalizeSshRemotePathForRelative(targetPath)
+  const fromParts = from.split('/').filter(Boolean)
+  const targetParts = target.split('/').filter(Boolean)
+  let index = 0
+  while (index < fromParts.length && index < targetParts.length && fromParts[index] === targetParts[index]) {
+    index += 1
+  }
+  const up = fromParts.slice(index).map(() => '..')
+  const down = targetParts.slice(index)
+  return [...up, ...down].join('/') || targetParts.at(-1) || target
+}
+
+async function listSshWorkspaceDirectory(
+  payload: WorkspaceDirectoryTarget
+): Promise<WorkspaceDirectoryListResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'list',
+    root: target.root,
+    path: target.path
+  })
+  if (!result.ok) return result
+  const root = sshRemotePathToUri(target.connectionId, result.root ?? result.path)
+  const entries = (result.entries ?? [])
+    .map((entry) => ({
+      name: entry.name,
+      path: sshRemotePathToUri(target.connectionId, entry.path),
+      type: entry.type,
+      ext: sshEntryExt(entry.name, entry.type)
+    }))
+    .sort(compareWorkspaceEntries)
+  return { ok: true, root, entries }
+}
+
+async function readSshWorkspaceFile(payload: WorkspaceFileTarget): Promise<WorkspaceFileReadResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'readText',
+    root: target.root,
+    path: target.path,
+    maxBytes: MAX_FILE_PREVIEW_BYTES
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    content: result.content ?? '',
+    size: result.size ?? 0,
+    truncated: result.truncated === true,
+    ...(payload.line ? { line: payload.line } : {}),
+    ...(payload.column ? { column: payload.column } : {})
+  }
+}
+
+async function readSshWorkspaceImage(payload: WorkspaceFileTarget): Promise<WorkspaceImageReadResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const ext = extensionFromName(target.path).toLowerCase()
+  const mimeType = WORKSPACE_IMAGE_MIME_BY_EXT.get(ext)
+  if (!mimeType) {
+    return { ok: false, message: 'This image type is not supported in Write mode.' }
+  }
+  const result = await runSshFileOperation(target.connection, {
+    op: 'readBinary',
+    root: target.root,
+    path: target.path,
+    maxBytes: MAX_IMAGE_PREVIEW_BYTES
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    dataUrl: `data:${mimeType};base64,${result.dataBase64 ?? ''}`,
+    mimeType,
+    size: result.size ?? 0
+  }
+}
+
+async function writeSshWorkspaceFile(
+  payload: WorkspaceFileWritePayload
+): Promise<WorkspaceFileWriteResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'writeText',
+    root: target.root,
+    path: target.path,
+    content: payload.content
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    savedAt: new Date().toISOString()
+  }
+}
+
+async function createSshWorkspaceFile(
+  payload: WorkspaceFileCreatePayload
+): Promise<WorkspaceFileCreateResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'createFile',
+    root: target.root,
+    path: target.path,
+    content: payload.content
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    createdAt: new Date().toISOString()
+  }
+}
+
+async function createSshWorkspaceDirectory(
+  payload: WorkspaceDirectoryCreatePayload
+): Promise<WorkspaceDirectoryCreateResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'createDirectory',
+    root: target.root,
+    path: target.path
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    createdAt: new Date().toISOString()
+  }
+}
+
+async function renameSshWorkspaceEntry(
+  payload: WorkspaceEntryRenamePayload
+): Promise<WorkspaceEntryRenameResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'rename',
+    root: target.root,
+    path: target.path,
+    newName: payload.newName
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    previousPath: sshRemotePathToUri(target.connectionId, (result as { previousPath?: string }).previousPath ?? target.path),
+    renamedAt: new Date().toISOString()
+  }
+}
+
+async function deleteSshWorkspaceEntry(
+  payload: WorkspaceEntryDeletePayload
+): Promise<WorkspaceEntryDeleteResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'delete',
+    root: target.root,
+    path: target.path
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    deletedAt: new Date().toISOString()
+  }
+}
+
+async function resolveSshWorkspaceFile(
+  payload: WorkspaceFileTarget
+): Promise<WorkspaceFileResolveResult> {
+  const targetUri = resolveSshTargetUri(payload.path, payload.workspaceRoot)
+  const target = await sshConnectionForWorkspaceUri(targetUri)
+  const result = await runSshFileOperation(target.connection, {
+    op: 'stat',
+    root: target.root,
+    path: target.path
+  })
+  if (!result.ok) return result
+  return { ok: true, path: sshRemotePathToUri(target.connectionId, result.path) }
+}
+
 export async function listWorkspaceDirectory(
   payload: WorkspaceDirectoryTarget
 ): Promise<WorkspaceDirectoryListResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await listSshWorkspaceDirectory(payload)
+    }
     const root = await resolveWorkspaceDirectory(payload)
     const entries = await readdir(root, { withFileTypes: true })
     const normalized = entries
@@ -89,6 +355,9 @@ export async function listWorkspaceDirectory(
 
 export async function readWorkspaceFile(payload: WorkspaceFileTarget): Promise<WorkspaceFileReadResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await readSshWorkspaceFile(payload)
+    }
     const targetPath = await resolveOpenTargetPath(payload.path, payload.workspaceRoot)
     const fileInfo = await stat(targetPath)
     if (fileInfo.isDirectory()) {
@@ -129,6 +398,9 @@ export async function readWorkspaceImage(
   payload: WorkspaceFileTarget
 ): Promise<WorkspaceImageReadResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await readSshWorkspaceImage(payload)
+    }
     const targetPath = await resolveOpenTargetPath(payload.path, payload.workspaceRoot)
     const fileInfo = await stat(targetPath)
     if (fileInfo.isDirectory()) {
@@ -164,6 +436,9 @@ export async function writeWorkspaceFile(
   payload: WorkspaceFileWritePayload
 ): Promise<WorkspaceFileWriteResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await writeSshWorkspaceFile(payload)
+    }
     const targetPath = await resolveTargetPathWithinWorkspace(payload.path, payload.workspaceRoot)
     await mkdir(dirname(targetPath), { recursive: true })
     await writeFile(targetPath, payload.content, 'utf8')
@@ -184,6 +459,9 @@ export async function createWorkspaceFile(
   payload: WorkspaceFileCreatePayload
 ): Promise<WorkspaceFileCreateResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await createSshWorkspaceFile(payload)
+    }
     const targetPath = await resolveTargetPathWithinWorkspace(payload.path, payload.workspaceRoot)
     await mkdir(dirname(targetPath), { recursive: true })
     if (await pathExists(targetPath)) {
@@ -207,6 +485,9 @@ export async function createWorkspaceDirectory(
   payload: WorkspaceDirectoryCreatePayload
 ): Promise<WorkspaceDirectoryCreateResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await createSshWorkspaceDirectory(payload)
+    }
     const targetPath = await resolveTargetPathWithinWorkspace(payload.path, payload.workspaceRoot)
     if (await pathExists(targetPath)) {
       return { ok: false, message: 'Directory already exists.' }
@@ -264,6 +545,9 @@ export async function saveWorkspaceClipboardImage(
   payload: WorkspaceClipboardImageSavePayload
 ): Promise<WorkspaceClipboardImageSaveResult> {
   try {
+    if (isSshWorkspacePath(payload.workspaceRoot)) {
+      return await saveSshWorkspaceClipboardImage(payload)
+    }
     const currentFilePath = await resolveOpenTargetPath(payload.currentFilePath, payload.workspaceRoot, {
       allowBasenameFallback: false
     })
@@ -301,10 +585,51 @@ export async function saveWorkspaceClipboardImage(
   }
 }
 
+async function saveSshWorkspaceClipboardImage(
+  payload: WorkspaceClipboardImageSavePayload
+): Promise<WorkspaceClipboardImageSaveResult> {
+  const target = await sshConnectionForWorkspaceUri(payload.currentFilePath || payload.workspaceRoot)
+  const image = clipboard.readImage()
+  if (image.isEmpty()) {
+    return { ok: false, message: 'Clipboard does not currently contain an image.' }
+  }
+
+  const buffer = image.toPNG()
+  if (!buffer.length) {
+    return { ok: false, message: 'Clipboard image could not be encoded as PNG.' }
+  }
+
+  const imageDirectory = payload.imageDirectory?.trim() || WORKSPACE_IMAGE_DIR
+  const imageDir = imageDirectory.startsWith('/') || imageDirectory.startsWith('~')
+    ? imageDirectory
+    : joinSshRemotePath(target.root, imageDirectory)
+  const imageRemotePath = joinSshRemotePath(imageDir, buildWorkspaceImageName())
+  const result = await runSshFileOperation(target.connection, {
+    op: 'writeBinary',
+    root: target.root,
+    path: imageRemotePath,
+    dataBase64: buffer.toString('base64')
+  })
+  if (!result.ok) return result
+
+  return {
+    ok: true,
+    path: sshRemotePathToUri(target.connectionId, result.path),
+    markdownPath: relativeSshRemotePath(
+      sshRemoteDirnameForRelative(target.path),
+      result.path
+    ),
+    createdAt: new Date().toISOString()
+  }
+}
+
 export async function renameWorkspaceEntry(
   payload: WorkspaceEntryRenamePayload
 ): Promise<WorkspaceEntryRenameResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await renameSshWorkspaceEntry(payload)
+    }
     const sourcePath = await resolveTargetPathWithinWorkspace(payload.path, payload.workspaceRoot)
     await stat(sourcePath)
     const nextName = validateEntryName(payload.newName)
@@ -342,6 +667,9 @@ export async function deleteWorkspaceEntry(
   payload: WorkspaceEntryDeletePayload
 ): Promise<WorkspaceEntryDeleteResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await deleteSshWorkspaceEntry(payload)
+    }
     const targetPath = await resolveTargetPathWithinWorkspace(payload.path, payload.workspaceRoot)
     const info = await stat(targetPath)
     if (payload.workspaceRoot?.trim()) {
@@ -372,6 +700,9 @@ export async function resolveWorkspaceFile(
   payload: WorkspaceFileTarget
 ): Promise<WorkspaceFileResolveResult> {
   try {
+    if (shouldUseSshWorkspace(payload)) {
+      return await resolveSshWorkspaceFile(payload)
+    }
     const normalizedPath = normalizeUserPath(payload.path)
     const expandedPath = expandHomePath(normalizedPath)
     if (!isAbsolute(expandedPath) && !payload.workspaceRoot?.trim()) {

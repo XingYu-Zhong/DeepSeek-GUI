@@ -1,6 +1,11 @@
 import type { ReactElement, ReactNode } from 'react'
 import { ChevronDown, ChevronRight, FileText, FilePlus2, Folder, FolderPlus, Image, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import {
+  isSshWorkspacePath,
+  parseSshWorkspaceUri,
+  sshRemoteBasename
+} from '@shared/ssh-workspace'
 import type { WorkspaceEntry } from '@shared/workspace-file'
 import { isWriteImageFileExtension, isWriteWorkspaceEntry } from '@shared/write-text-file'
 import {
@@ -33,12 +38,26 @@ function normalizePath(value: string): string {
 }
 
 function basenameFromPath(value: string): string {
+  if (isSshWorkspacePath(value)) {
+    return sshRemoteBasename(parseSshWorkspaceUri(value).remotePath)
+  }
   const normalized = normalizePath(value)
   const segments = normalized.split('/').filter(Boolean)
   return segments[segments.length - 1] || normalized
 }
 
 function relativeDisplayPath(root: string, target: string): string {
+  if (isSshWorkspacePath(root) && isSshWorkspacePath(target)) {
+    const parsedRoot = parseSshWorkspaceUri(root)
+    const parsedTarget = parseSshWorkspaceUri(target)
+    if (parsedRoot.connectionId === parsedTarget.connectionId) {
+      const normalizedRoot = normalizePath(parsedRoot.remotePath)
+      const normalizedTarget = normalizePath(parsedTarget.remotePath)
+      if (normalizedTarget === normalizedRoot) return basenameFromPath(target)
+      const prefix = `${normalizedRoot}/`
+      if (normalizedTarget.startsWith(prefix)) return normalizedTarget.slice(prefix.length)
+    }
+  }
   const normalizedRoot = normalizePath(root)
   const normalizedTarget = normalizePath(target)
   if (normalizedTarget === normalizedRoot) return basenameFromPath(normalizedTarget)

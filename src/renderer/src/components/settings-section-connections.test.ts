@@ -33,8 +33,20 @@ const labels: Record<string, string> = {
   sshConnectionUser: 'User',
   sshConnectionUserPlaceholder: 'Optional',
   sshConnectionPort: 'Port',
+  sshConnectionAuthMethod: 'Authentication',
+  sshConnectionAuthAgent: 'SSH agent',
+  sshConnectionAuthPassword: 'Password',
+  sshConnectionAuthIdentityFile: 'Identity file',
+  sshConnectionAuthAgentDesc: 'Uses SSH_AUTH_SOCK or Pageant',
+  sshConnectionPassword: 'Password',
+  sshConnectionPasswordPlaceholder: 'Saved locally',
+  sshConnectionIdentityFile: 'Identity file path',
+  sshConnectionIdentityFilePlaceholder: '~/.ssh/id_ed25519',
+  sshConnectionPassphrase: 'Key passphrase',
+  sshConnectionPassphrasePlaceholder: 'Optional',
   sshConnectionRemotePath: 'Remote path',
-  sshConnectionRemotePathPlaceholder: '~'
+  sshConnectionRemotePathPlaceholder: '~',
+  sshConnectionOpenProject: 'Open remote project'
 }
 
 function t(key: string): string {
@@ -61,6 +73,10 @@ function settings(): AppSettingsV1 {
         host: 'vps.example.com',
         user: 'deploy',
         port: 2222,
+        authMethod: 'identityFile',
+        password: '',
+        identityFile: '~/.ssh/id_ed25519',
+        passphrase: '',
         remotePath: '/srv/app',
         enabled: true,
         createdAt: '2026-06-07T00:00:00.000Z',
@@ -91,7 +107,10 @@ describe('ConnectionsSettingsSection', () => {
     expect(html).toContain('No secrets are stored')
     expect(html).toContain('VPS')
     expect(html).toContain('vps.example.com')
+    expect(html).toContain('Identity file')
+    expect(html).toContain('~/.ssh/id_ed25519')
     expect(html).toContain('/srv/app')
     expect(html).toContain('Test')
+    expect(html).toContain('Open remote project')
   })
 })

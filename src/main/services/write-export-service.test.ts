@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { buildSshWorkspaceUri } from '../../shared/ssh-workspace'
 
 vi.mock('electron', () => ({
   BrowserWindow: class BrowserWindow {},
@@ -35,6 +36,9 @@ describe('write-export-service helpers', () => {
     expect(buildWriteExportFileName('/tmp/draft.md', 'pdf')).toBe('draft.pdf')
     expect(buildWriteExportFileName('/tmp/draft.md', 'doc')).toBe('draft.doc')
     expect(buildWriteExportFileName('/tmp/draft.md', 'docx')).toBe('draft.docx')
+    expect(buildWriteExportFileName(buildSshWorkspaceUri('ssh-1', '/srv/app/docs/draft.md'), 'html')).toBe(
+      'draft.html'
+    )
   })
 
   it('renders markdown exports with resolved links and inlined local images', async () => {
@@ -50,6 +54,20 @@ describe('write-export-service helpers', () => {
     expect(html).toContain('<h1>Heading</h1>')
     expect(html).toContain('src="data:image/png;base64,')
     expect(html).toContain(`href="${pathToFileURL(join(workspaceRoot, 'notes.md')).href}"`)
+  })
+
+  it('renders markdown exports for SSH workspaces without local file URLs', async () => {
+    const sourcePath = buildSshWorkspaceUri('ssh-1', '/srv/app/docs/draft.md')
+
+    const html = await buildWriteExportHtmlDocument({
+      sourcePath,
+      content: '# Remote\n\n![Cover](./cover.png)\n\n[Notes](../notes.md)'
+    })
+
+    expect(html).toContain('<h1>Remote</h1>')
+    expect(html).not.toContain('file://')
+    expect(html).toContain(`src="${buildSshWorkspaceUri('ssh-1', '/srv/app/docs/cover.png')}"`)
+    expect(html).toContain(`href="${buildSshWorkspaceUri('ssh-1', '/srv/app/notes.md')}"`)
   })
 
   it('renders clipboard html fragments for markdown content', async () => {

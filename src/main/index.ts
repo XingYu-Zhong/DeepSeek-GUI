@@ -50,6 +50,7 @@ import {
   type ClawScheduleMcpLaunchConfig
 } from './claw-schedule-mcp-config'
 import { registerAppIpcHandlers } from './ipc/register-app-ipc-handlers'
+import { configureWorkspaceFileSettingsProvider } from './services/workspace-service'
 import {
   configureManagedWeixinBridgeUrlResolver,
   pollFeishuInstall,
@@ -948,6 +949,7 @@ app.whenReady().then(async () => {
     resolveLogDirectory,
     logError
   })
+  configureWorkspaceFileSettingsProvider(() => store.load())
 
   void loadGuiUpdaterModule().catch((error) => {
     console.warn('[deepseek-gui updater] failed to initialize on startup:', error)
