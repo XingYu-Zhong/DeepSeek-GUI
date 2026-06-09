@@ -418,8 +418,8 @@ export function initializeGuiUpdater(
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   configureUpdaterChannel(configuredChannel)
-  // 开发模式下不设置 forceDevUpdateConfig，使用生产 feed URL 正常工作
-  // 且不自启后台定时检查，避免无 dev-app-update.yml 时产生 ENOENT 报错
+  // 开发模式下不设置 forceDevUpdateConfig
+  // 且不自启后台定时检查
 
   autoUpdater.logger = {
     info: (message?: unknown) => console.info('[deepseek-gui updater]', message),
@@ -468,7 +468,7 @@ export function initializeGuiUpdater(
   })
 
   if (!app.isPackaged) {
-    console.info('[deepseek-gui updater] dev mode: background update check disabled')
+    console.info("[deepseek-gui updater] dev mode: background update check disabled")
   } else {
     void scheduleNextBackgroundCheck()
   }
