@@ -342,6 +342,35 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
     expect(patch.agents?.kun?.providerId).toBe(DEFAULT_MODEL_PROVIDER_ID)
   })
 
+  it('renders custom model provider id as editable', () => {
+    const provider = defaultModelProviderSettings()
+    const customProvider = {
+      id: 'custom-provider-2',
+      name: 'Custom Provider',
+      apiKey: '',
+      baseUrl: 'https://api.example.com/v1',
+      models: []
+    }
+    const html = renderToStaticMarkup(createElement(AgentsSettingsSection, {
+      ctx: {
+        ...baseCtx(),
+        provider: {
+          ...provider,
+          providers: [...provider.providers, customProvider]
+        },
+        kun: {
+          ...defaultKunRuntimeSettings(),
+          providerId: customProvider.id
+        }
+      }
+    }))
+    const providerIdInput = html.match(/<input[^>]+value="custom-provider-2"[^>]*>/)?.[0]
+
+    expect(providerIdInput).toBeTruthy()
+    expect(providerIdInput).not.toContain('readOnly')
+    expect(providerIdInput).not.toContain('readonly')
+  })
+
   it('keeps advanced agent controls behind collapsed disclosures', () => {
     const html = renderToStaticMarkup(createElement(AgentsSettingsSection, { ctx: baseCtx() }))
 

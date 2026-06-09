@@ -16,7 +16,8 @@ import {
   DEFAULT_KUN_DATA_DIR,
   WRITE_INLINE_COMPLETION_MODEL_IDS,
   defaultModelProviderSettings,
-  isKunRuntimeInsecure
+  isKunRuntimeInsecure,
+  normalizeModelProviderId
 } from '@shared/app-settings'
 import type { GuiUpdateChannel } from '@shared/gui-update'
 import type { SkillRootId } from '../lib/skill-root-preference'
@@ -427,6 +428,16 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
   const updateModelProvider = (id: string, patch: Partial<ModelProviderProfileV1>): void => {
     updateModelProviders(modelProviders.map((item) => item.id === id ? { ...item, ...patch } : item))
   }
+  const updateModelProviderId = (id: string, value: string): void => {
+    if (id === DEFAULT_MODEL_PROVIDER_ID) return
+    const nextId = normalizeModelProviderId(value)
+    if (!nextId || nextId === id) return
+    if (modelProviders.some((item) => item.id === nextId && item.id !== id)) return
+    updateModelProviders(
+      modelProviders.map((item) => item.id === id ? { ...item, id: nextId } : item),
+      activeProviderId === id ? { providerId: nextId } : undefined
+    )
+  }
   const addModelProvider = (): void => {
     const baseId = 'custom-provider'
     let index = modelProviders.length + 1
@@ -453,6 +464,7 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
       activeProviderId === id ? { providerId: DEFAULT_MODEL_PROVIDER_ID } : undefined
     )
   }
+  const canEditActiveProviderId = Boolean(activeProvider && activeProvider.id !== DEFAULT_MODEL_PROVIDER_ID)
 
   return (
             <>
@@ -536,9 +548,15 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
                               <label className="grid gap-1.5 text-[12px] font-semibold text-ds-muted">
                                 {t('modelProviderId')}
                                 <input
-                                  className="w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] font-normal text-ds-faint shadow-sm"
+                                  className={`w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 font-mono text-[13px] font-normal shadow-sm ${
+                                    canEditActiveProviderId
+                                      ? 'text-ds-ink focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30'
+                                      : 'text-ds-faint'
+                                  }`}
                                   value={activeProvider.id}
-                                  readOnly
+                                  readOnly={!canEditActiveProviderId}
+                                  spellCheck={false}
+                                  onChange={(e) => updateModelProviderId(activeProvider.id, e.target.value)}
                                 />
                               </label>
                             </div>

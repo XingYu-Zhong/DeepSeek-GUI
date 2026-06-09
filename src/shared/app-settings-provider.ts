@@ -93,7 +93,7 @@ export function getModelProviderProfile(
   providerId: string | undefined
 ): ModelProviderProfileV1 {
   const provider = getModelProviderSettings(settings)
-  const id = normalizeProviderId(providerId || DEFAULT_MODEL_PROVIDER_ID)
+  const id = normalizeModelProviderId(providerId || DEFAULT_MODEL_PROVIDER_ID)
   return provider.providers.find((profile) => profile.id === id) ?? provider.providers[0] ?? defaultModelProviderProfile(provider.apiKey, provider.baseUrl)
 }
 
@@ -138,7 +138,7 @@ function defaultModelProviderProfile(apiKey: string, baseUrl: string): ModelProv
 function normalizeModelProviderProfile(
   input: ModelProviderProfilePatchV1 | undefined
 ): ModelProviderProfileV1 | null {
-  const id = normalizeProviderId(input?.id)
+  const id = normalizeModelProviderId(input?.id)
   if (!id) return null
   const name = typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : id
   const baseUrl =
@@ -166,7 +166,7 @@ function normalizeProviderModels(models: unknown): string[] {
   return [...ids].sort((a, b) => a.localeCompare(b))
 }
 
-function normalizeProviderId(value: unknown): string {
+export function normalizeModelProviderId(value: unknown): string {
   return typeof value === 'string'
     ? value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
     : ''
