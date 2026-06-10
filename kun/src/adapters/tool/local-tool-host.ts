@@ -110,7 +110,22 @@ export class LocalToolHost implements ToolHost {
     if (context.abortSignal.aborted) {
       throw new Error('tool call aborted before start')
     }
-    const { tool } = this.registry.resolveTool(call.toolName, context, call.providerId)
+    let tool: LocalTool
+    try {
+      ;({ tool } = this.registry.resolveTool(call.toolName, context, call.providerId))
+    } catch (error) {
+      // The tool could not be resolved at call time. This commonly
+      // happens when an MCP server disconnected or timed out mid-session
+      // (the model still "remembers" a tool that is no longer
+      // registered). Rather than throwing and failing the entire turn,
+      // surface a recoverable error tool_result so the agent loop can
+      // retry, re-discover tools, or choose another approach.
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        item: this.unresolvedToolResult(context, call, message),
+        approved: false
+      }
+    }
     if (tool.policy === 'never') {
       throw new Error(`tool ${call.toolName} is disabled by policy`)
     }
@@ -293,6 +308,36 @@ export class LocalToolHost implements ToolHost {
       toolName: call.toolName,
       toolKind: call.toolKind ?? tool.toolKind,
       output: { code, error: message },
+      isError: true
+    })
+  }
+
+  /**
+   * Error result for a tool that could not be resolved (unknown tool or
+   * an MCP server that disconnected). Built without a `tool` reference
+   * since none is available. Returned as a recoverable tool_result so a
+   * single dropped tool does not abort the whole turn.
+   */
+  private unresolvedToolResult(
+    context: ToolHostContext,
+    call: ToolCallLike,
+    message: string
+  ): TurnItem {
+    return makeToolResultItem({
+      id: `item_${call.callId}`,
+      turnId: context.turnId,
+      threadId: context.threadId,
+      callId: call.callId,
+      toolName: call.toolName,
+      ...(call.toolKind ? { toolKind: call.toolKind } : {}),
+      output: {
+        code: 'tool_unavailable',
+        error: message,
+        hint:
+          'This tool is not currently available (it may belong to an MCP server that disconnected or timed out). ' +
+          'Do not assume the task failed. Retry the tool, use mcp_search to re-discover available tools, ' +
+          'or accomplish the goal with another available tool.'
+      },
       isError: true
     })
   }

@@ -1,26 +1,58 @@
 import type { TurnItem } from '../contracts/items.js'
 
 /**
- * Very small token estimator. The estimator prefers reported usage
- * when available, otherwise approximates one token per ~4 characters of
- * item text. The estimator is intentionally simple: the goal is to
- * trigger compaction at a reasonable threshold, not to model provider
- * tokenizers exactly.
+ * Token estimator for compaction decisions.
+ *
+ * The estimator prefers reported usage when available. When it must
+ * approximate from text, it counts CJK and other wide characters as
+ * roughly one token each and packs runs of ASCII at ~4 chars/token.
+ * This avoids the severe under-counting that a naive `length / 4`
+ * heuristic produces for Chinese/Japanese/Korean text, which is the
+ * dominant language for many users of this app. Accurate estimates are
+ * what let compaction trigger *before* the real context window is
+ * exceeded rather than after.
  */
 export class ContextEstimator {
   private readonly charsPerToken: number
 
   constructor(charsPerToken = 4) {
-    this.charsPerToken = charsPerToken
+    this.charsPerToken = Math.max(1, charsPerToken)
   }
 
   estimateItem(item: TurnItem): number {
     const text = this.collectText(item)
-    return Math.max(1, Math.ceil(text.length / this.charsPerToken))
+    return Math.max(1, this.estimateText(text))
   }
 
   estimateItems(items: TurnItem[]): number {
     return items.reduce((sum, item) => sum + this.estimateItem(item), 0)
+  }
+
+  /**
+   * Estimate tokens for a raw string. ASCII bytes are packed at
+   * `charsPerToken` per token; non-ASCII characters (CJK, emoji, etc.)
+   * count as ~1 token each, except zero-width combining marks.
+   */
+  estimateText(text: string): number {
+    if (!text) return 0
+    let asciiRun = 0
+    let tokens = 0
+    const flushAscii = (): void => {
+      if (asciiRun > 0) {
+        tokens += Math.ceil(asciiRun / this.charsPerToken)
+        asciiRun = 0
+      }
+    }
+    for (const char of text) {
+      if (char.charCodeAt(0) <= 0x7f) {
+        asciiRun += 1
+        continue
+      }
+      flushAscii()
+      tokens += isCombiningMark(char) ? 0 : 1
+    }
+    flushAscii()
+    return tokens
   }
 
   private collectText(item: TurnItem): string {
@@ -45,4 +77,8 @@ export class ContextEstimator {
         return item.message
     }
   }
+}
+
+function isCombiningMark(char: string): boolean {
+  return /[\u0300-\u036f\ufe00-\ufe0f]/u.test(char)
 }

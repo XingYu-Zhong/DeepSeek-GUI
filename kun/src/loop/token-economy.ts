@@ -21,7 +21,14 @@ export const DEFAULT_TOKEN_ECONOMY_CONFIG: NormalizedTokenEconomyConfig = {
   compressToolDescriptions: true,
   compressToolResults: true,
   conciseResponses: true,
-  historyHygiene: {}
+  // Safety net that bounds the combined size of all tool results in the
+  // sent history, independent of the `enabled` flag (request hygiene runs
+  // unconditionally). This prevents a long session from accumulating
+  // hundreds of tool results into a multi-hundred-thousand-token request.
+  historyHygiene: {
+    maxCumulativeToolResultTokens: 120_000,
+    keepRecentToolResults: 4
+  }
 }
 
 export const TOKEN_ECONOMY_INSTRUCTION = [

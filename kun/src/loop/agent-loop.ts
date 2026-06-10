@@ -1878,14 +1878,31 @@ function buildModelCompactionPrompt(input: {
     Math.max(1_024, input.maxBytes)
   )
   return [
-    'Summarize the following Kun conversation history for a context fold.',
-    'Preserve user goals, requirements, decisions, files touched, tool outcomes, errors, constraints, active/pinned skills, and unresolved next steps.',
-    'Do not invent facts. Do not include generic advice. Prefer concise bullets grouped by topic.',
+    'You are compacting a long agent conversation so work can continue past the context window.',
+    'Write a dense, factual handoff summary using EXACTLY the following section headers, in this order.',
+    'Keep every section; write "- (none)" when a section has no content. Use short bullets, not prose.',
+    'Do not invent facts, do not add generic advice, and preserve concrete identifiers verbatim',
+    '(file paths, function/variable names, commands, URLs, IDs, error messages).',
     '',
-    'Existing heuristic summary to cross-check:',
+    '## Goal',
+    "- The user's overall objective and any explicit requirements or constraints.",
+    '## Completed',
+    '- Work already done and decisions made, with the concrete outcome of each.',
+    '## Key findings',
+    '- Important facts discovered (root causes, data values, API shapes) needed to continue.',
+    '## Files & locations',
+    '- Files created/edited/inspected and the relevant paths or line ranges.',
+    '## Tool & command results',
+    '- Notable tool/command outcomes, especially errors and their resolution status.',
+    '## Pending',
+    '- Unresolved next steps and anything explicitly requested but not yet done.',
+    '## Constraints & pins',
+    '- Durable rules, user preferences, and active/pinned skills that must survive.',
+    '',
+    'Existing heuristic summary to cross-check (may be incomplete):',
     input.heuristicSummary.trim() || '(none)',
     '',
-    'History excerpt to fold:',
+    'Conversation history to fold:',
     transcript || '(empty)'
   ].join('\n')
 }

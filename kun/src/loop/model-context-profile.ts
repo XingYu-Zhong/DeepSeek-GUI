@@ -68,13 +68,19 @@ export type ModelProfileConfigSource = {
 }
 
 export const DEFAULT_CONTEXT_THRESHOLDS: ModelContextThresholds = {
-  softThreshold: 16_000,
-  hardThreshold: 24_000
+  softThreshold: 96_000,
+  hardThreshold: 120_000
 }
 
 const DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS = 1_000_000
-const DEEPSEEK_V4_SOFT_THRESHOLD_RATIO = 0.98
-const DEEPSEEK_V4_HARD_THRESHOLD_RATIO = 0.99
+// Trigger compaction well before the real window is full. Compacting at
+// ~98% (the previous default) left no headroom: a single large tool
+// result could blow past the window before the next compaction ran,
+// which is what caused runaway context growth and dropped tool tables.
+// 0.75 / 0.85 mirrors the "compact before 100%" guidance used by mature
+// coding agents and leaves room for the post-compaction request to fit.
+const DEEPSEEK_V4_SOFT_THRESHOLD_RATIO = 0.75
+const DEEPSEEK_V4_HARD_THRESHOLD_RATIO = 0.85
 const DEFAULT_MODEL_INPUT_MODALITIES: readonly ModelInputModality[] = ['text']
 const DEFAULT_MODEL_OUTPUT_MODALITIES: readonly ModelInputModality[] = ['text']
 const DEFAULT_MODEL_MESSAGE_PARTS: readonly ModelMessagePartSupport[] = ['text']
@@ -107,9 +113,19 @@ export function contextThresholdsForModel(
 ): ModelContextThresholds {
   const profile = resolveModelContextProfile(model, profiles)
   if (!profile) return fallback
+  // Safety cap: never let thresholds exceed 75%/85% of the context
+  // window, even if a config-provided model profile sets them higher
+  // (e.g. 98%/99%). Compacting too late leaves no headroom and lets a
+  // single large turn blow past the real window, causing runaway growth.
+  const maxSoft = profile.contextWindowTokens
+    ? Math.floor(profile.contextWindowTokens * 0.75)
+    : profile.softThreshold
+  const maxHard = profile.contextWindowTokens
+    ? Math.floor(profile.contextWindowTokens * 0.85)
+    : profile.hardThreshold
   return {
-    softThreshold: profile.softThreshold,
-    hardThreshold: profile.hardThreshold
+    softThreshold: Math.min(profile.softThreshold, maxSoft),
+    hardThreshold: Math.min(profile.hardThreshold, maxHard)
   }
 }
 

@@ -7,6 +7,21 @@ export type RequestHistoryHygieneOptions = {
   maxToolArgumentStringBytes?: number
   maxToolArgumentStringTokens?: number
   maxArrayItems?: number
+  /**
+   * Cumulative token budget for ALL tool results combined across the
+   * sent history. Tool results are kept in full from newest to oldest
+   * until this budget is consumed; older results beyond the budget are
+   * collapsed to a one-line digest. This bounds total context growth
+   * regardless of how many tool calls a long session accumulates, which
+   * is what prevents runaway growth (e.g. a session ballooning to
+   * millions of tokens of stale tool output).
+   */
+  maxCumulativeToolResultTokens?: number
+  /**
+   * Number of most-recent tool results that are always kept at full
+   * per-result fidelity, even if the cumulative budget is exhausted.
+   */
+  keepRecentToolResults?: number
 }
 
 const DEFAULT_MAX_TOOL_RESULT_LINES = 320
@@ -15,6 +30,10 @@ const DEFAULT_MAX_TOOL_RESULT_TOKENS = 8_000
 const DEFAULT_MAX_TOOL_ARGUMENT_STRING_BYTES = 8 * 1024
 const DEFAULT_MAX_TOOL_ARGUMENT_STRING_TOKENS = 2_000
 const DEFAULT_MAX_ARRAY_ITEMS = 80
+// 0 means "no cumulative cap" (back-compat). A positive value bounds the
+// combined size of all tool results in the sent history.
+const DEFAULT_MAX_CUMULATIVE_TOOL_RESULT_TOKENS = 0
+const DEFAULT_KEEP_RECENT_TOOL_RESULTS = 4
 const MAX_SIGNAL_LINES = 48
 const MAX_LINE_CHARS = 280
 const LONG_ARGUMENT_PREVIEW_CHARS = 160
@@ -69,7 +88,87 @@ export function applyRequestHistoryHygiene(
     }
     return item
   })
-  return changed ? next : items
+  const budgeted = applyCumulativeToolResultBudget(next, limits)
+  if (budgeted !== next) changed = true
+  return changed ? budgeted : items
+}
+
+/**
+ * Enforce a combined token budget across all tool results in the sent
+ * history. The most recent `keepRecentToolResults` results are always
+ * kept verbatim; remaining results are kept newest-first until the
+ * cumulative budget is exhausted, after which older results are
+ * collapsed to a single-line digest. This bounds total context growth
+ * no matter how many tool calls accumulate over a long session.
+ */
+function applyCumulativeToolResultBudget(
+  items: TurnItem[],
+  limits: Required<RequestHistoryHygieneOptions>
+): TurnItem[] {
+  const budget = limits.maxCumulativeToolResultTokens
+  if (budget <= 0) return items
+
+  const toolResultIndexes: number[] = []
+  for (let index = 0; index < items.length; index += 1) {
+    if (items[index].kind === 'tool_result') toolResultIndexes.push(index)
+  }
+  if (toolResultIndexes.length === 0) return items
+
+  const alwaysKeep = new Set(toolResultIndexes.slice(-limits.keepRecentToolResults))
+  let used = 0
+  const collapse = new Set<number>()
+  // Walk newest -> oldest so recent context is preserved first.
+  for (let cursor = toolResultIndexes.length - 1; cursor >= 0; cursor -= 1) {
+    const index = toolResultIndexes[cursor]
+    const item = items[index]
+    if (item.kind !== 'tool_result') continue
+    const cost = estimateTokens(stringifyOutput(item.output))
+    if (alwaysKeep.has(index)) {
+      used += cost
+      continue
+    }
+    if (used + cost <= budget) {
+      used += cost
+      continue
+    }
+    collapse.add(index)
+  }
+  if (collapse.size === 0) return items
+
+  return items.map((item, index) => {
+    if (!collapse.has(index) || item.kind !== 'tool_result') return item
+    return { ...item, output: digestStaleToolResult(item.toolName, item.isError, item.output) }
+  })
+}
+
+function digestStaleToolResult(toolName: string, isError: boolean | undefined, output: unknown): string {
+  const text = stringifyOutput(output)
+  const tokens = estimateTokens(text)
+  const firstLine = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) ?? ''
+  const preview = firstLine ? ` first line: ${clipInline(firstLine, 160)}` : ''
+  return (
+    `[cache hygiene: older ${toolName}${isError ? ' (error)' : ''} result elided to bound context, ` +
+    `approx ${tokens} token(s); re-run the tool or use narrower read/grep/bash ranges if needed.]${preview}`
+  )
+}
+
+function stringifyOutput(output: unknown): string {
+  if (typeof output === 'string') return output
+  if (output == null) return ''
+  try {
+    return JSON.stringify(output)
+  } catch {
+    return String(output)
+  }
+}
+
+function clipInline(text: string, max: number): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  if (compact.length <= max) return compact
+  return `${compact.slice(0, Math.max(0, max - 3)).trim()}...`
 }
 
 function normalizeOptions(options: RequestHistoryHygieneOptions): Required<RequestHistoryHygieneOptions> {
@@ -81,7 +180,15 @@ function normalizeOptions(options: RequestHistoryHygieneOptions): Required<Reque
       Math.max(512, Math.floor(options.maxToolArgumentStringBytes ?? DEFAULT_MAX_TOOL_ARGUMENT_STRING_BYTES)),
     maxToolArgumentStringTokens:
       Math.max(128, Math.floor(options.maxToolArgumentStringTokens ?? DEFAULT_MAX_TOOL_ARGUMENT_STRING_TOKENS)),
-    maxArrayItems: Math.max(1, Math.floor(options.maxArrayItems ?? DEFAULT_MAX_ARRAY_ITEMS))
+    maxArrayItems: Math.max(1, Math.floor(options.maxArrayItems ?? DEFAULT_MAX_ARRAY_ITEMS)),
+    maxCumulativeToolResultTokens: Math.max(
+      0,
+      Math.floor(options.maxCumulativeToolResultTokens ?? DEFAULT_MAX_CUMULATIVE_TOOL_RESULT_TOKENS)
+    ),
+    keepRecentToolResults: Math.max(
+      0,
+      Math.floor(options.keepRecentToolResults ?? DEFAULT_KEEP_RECENT_TOOL_RESULTS)
+    )
   }
 }
 
