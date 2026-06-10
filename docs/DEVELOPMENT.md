@@ -145,7 +145,7 @@ The release workflow:
 
 - computes the next `vX.Y.Z` patch tag from the latest three-part semver tag
 - reuses a tag that already points at the merge commit when a workflow is rerun
-- builds signed and notarized macOS arm64/x64 packages, a Windows x64 installer, and a Linux x64 AppImage
+- builds signed and notarized macOS arm64/x64 packages, Windows arm64/x64 installers, and a Linux x64 AppImage
 - uploads release assets and update metadata to GitHub Releases and the R2 `stable` channel
 - promotes R2 `stable/latest` only after all platform uploads succeed
 

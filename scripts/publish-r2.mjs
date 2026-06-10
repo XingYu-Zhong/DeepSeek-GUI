@@ -28,7 +28,7 @@ const PLATFORM_SPECS = {
   },
   win: {
     updateFile: 'latest.yml',
-    assetPattern: /^DeepSeek-GUI-.+-win-x64\.exe(\.blockmap)?$/
+    assetPattern: /^DeepSeek-GUI-.+-win-(arm64|x64)\.exe(\.blockmap)?$/
   },
   linux: {
     updateFile: 'latest-linux.yml',
@@ -336,7 +336,8 @@ function classifyDownload(fileName, platform) {
     }
   }
   if (platform === 'win') {
-    return { platform, arch: 'x64', format: extension, label: 'Windows x64 installer' }
+    const arch = fileName.includes('-arm64.') ? 'arm64' : 'x64'
+    return { platform, arch, format: extension, label: `Windows ${arch} installer` }
   }
   return { platform, arch: 'x64', format: extension, label: 'Linux x64 AppImage' }
 }

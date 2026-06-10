@@ -169,6 +169,8 @@ jobs:
           path: |
             dist/DeepSeek-GUI-*-win-x64.exe
             dist/DeepSeek-GUI-*-win-x64.exe.blockmap
+            dist/DeepSeek-GUI-*-win-arm64.exe
+            dist/DeepSeek-GUI-*-win-arm64.exe.blockmap
             dist/latest.yml
 
   build-linux:
@@ -270,6 +272,7 @@ jobs:
             "DeepSeek-GUI-*-mac-arm64.zip"
             "DeepSeek-GUI-*-mac-x64.zip"
             "DeepSeek-GUI-*-win-x64.exe"
+            "DeepSeek-GUI-*-win-arm64.exe"
             "DeepSeek-GUI-*-linux-x86_64.AppImage"
             "latest-mac.yml"
             "latest.yml"
@@ -306,7 +309,7 @@ jobs:
             echo "- Branch: \`master\`"
             echo "- Commit: \`${GITHUB_SHA::7}\`"
             echo "- macOS: Developer ID signed and notarized"
-            echo "- Platforms: macOS arm64/x64, Windows x64, Linux x64"
+            echo "- Platforms: macOS arm64/x64, Windows arm64/x64, Linux x64"
           } >> release-notes.md
 
       - name: Ensure release tag

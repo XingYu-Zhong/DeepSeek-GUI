@@ -129,9 +129,10 @@ module.exports = {
   },
   win: {
     icon: './src/asset/img/deepseek.png',
-    target: [{ target: 'nsis', arch: ['x64'] }]
+    target: [{ target: 'nsis', arch: ['x64', 'arm64'] }]
   },
   nsis: {
+    buildUniversalInstaller: false,
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     perMachine: false,

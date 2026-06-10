@@ -145,7 +145,7 @@ PR 描述建议至少包含：
 
 - 基于最新三段式 semver tag 自动生成下一个 `vX.Y.Z` patch tag
 - 如果 rerun 时当前 merge commit 已经有 tag，则复用该 tag
-- 构建已签名并公证的 macOS arm64/x64 包、Windows x64 安装器、Linux x64 AppImage
+- 构建已签名并公证的 macOS arm64/x64 包、Windows arm64/x64 安装器、Linux x64 AppImage
 - 将发布产物和更新元数据上传到 GitHub Releases 与 R2 `stable` 渠道
 - 只有在全部平台上传成功后，才会 promote R2 `stable/latest`
 

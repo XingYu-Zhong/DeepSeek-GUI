@@ -154,6 +154,7 @@ New-Item -ItemType Directory -Force -Path $env:ELECTRON_BUILDER_CACHE | Out-Null
 
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
   (Join-Path $Root 'dist\win-unpacked'), `
+  (Join-Path $Root 'dist\win-arm64-unpacked'), `
   (Join-Path $Root 'dist\mac'), `
   (Join-Path $Root 'dist\mac-arm64'), `
   (Join-Path $Root 'dist\linux-unpacked')
