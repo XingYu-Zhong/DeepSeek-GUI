@@ -843,7 +843,9 @@ describe('FloatingComposer capability controls', () => {
 
     expect(html).toContain('ds-floating-composer ds-no-drag')
     expect(html).toContain('ds-composer-shell ds-chat-composer ds-frosted ds-no-drag')
-    expect(html.match(/<textarea[^>]*>/)?.[0] ?? '').not.toContain('disabled=""')
+    const textarea = html.match(/<textarea[^>]*>/)?.[0] ?? ''
+    expect(textarea).toContain('w-full')
+    expect(textarea).not.toContain('disabled=""')
   })
 
   it('allows typing while a new chat has no selected runtime thread yet', () => {
@@ -880,5 +882,42 @@ describe('FloatingComposer capability controls', () => {
     expect(html).toContain('Choose a working directory before creating a thread.')
     const sendButton = html.match(/<button[^>]*aria-label="Send"[^>]*>/)?.[0] ?? ''
     expect(sendButton).toContain('disabled=""')
+  })
+
+  it('keeps the draft editable while the runtime is loading and shows send loading', () => {
+    useChatStore.setState({
+      activeThreadId: null,
+      activeThreadGoal: null,
+      route: 'chat',
+      workspaceRoot: '/workspace/deepseek-gui',
+      threads: []
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(FloatingComposer, {
+        input: 'draft during startup',
+        setInput: () => undefined,
+        workspaceRootOverride: '/workspace/deepseek-gui',
+        mode: 'agent',
+        setMode: () => undefined,
+        busy: false,
+        runtimeReady: false,
+        hasActiveThread: false,
+        composerModel: '',
+        composerPickList: [],
+        onComposerModelChange: () => undefined,
+        queuedMessages: [],
+        onRemoveQueuedMessage: () => undefined,
+        onSend: () => undefined,
+        onInterrupt: () => undefined,
+        attachmentUploadEnabled: false,
+        webAccessAvailable: false
+      })
+    )
+
+    expect(html.match(/<textarea[^>]*>/)?.[0] ?? '').not.toContain('disabled=""')
+    const sendButton = html.match(/<button[^>]*aria-label="Send"[^>]*>/)?.[0] ?? ''
+    expect(sendButton).toContain('disabled=""')
+    expect(html).toContain('lucide-loader-circle')
   })
 })

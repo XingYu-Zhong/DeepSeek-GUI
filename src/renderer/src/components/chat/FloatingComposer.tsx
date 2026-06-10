@@ -563,11 +563,7 @@ export function FloatingComposer({
     activeClawChannel?.remoteSession?.chatId?.trim()
   )
 
-  const canEditComposer = runtimeReady && (
-    route === 'claw'
-      ? clawHasInboundConversation
-      : true
-  )
+  const canEditComposer = route === 'claw' ? clawHasInboundConversation : true
   const canCompose = runtimeReady && (
     route === 'claw'
       ? clawHasInboundConversation
@@ -612,6 +608,7 @@ export function FloatingComposer({
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [goalPanelOpen, setGoalPanelOpen] = useState(false)
   const [goalRuntimeNowMs, setGoalRuntimeNowMs] = useState(() => Date.now())
+  const composerRootRef = useRef<HTMLDivElement | null>(null)
   const composerMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const composerMenuPanelRef = useRef<HTMLDivElement | null>(null)
   const goalPanelRef = useRef<HTMLDivElement | null>(null)
@@ -831,6 +828,7 @@ export function FloatingComposer({
     : canSetGoalPanelDraft
       ? false
     : !canSend
+  const primaryActionLoading = !runtimeReady
   const goalRuntimeStartedAtMs = goalRuntimeStartedAtRef.current
   const liveGoalElapsedSeconds =
     busy && activeThreadGoal?.status === 'active' && goalRuntimeStartedAtMs != null
@@ -1206,16 +1204,40 @@ export function FloatingComposer({
   }
 
   const handleComposerShellMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (!canEditComposer || event.target === draft.textareaRef.current) return
+    if (!canEditComposer) return
     const target = event.target
     if (
       target instanceof Element &&
-      target.closest("button,input,select,a,summary,[role='button'],[contenteditable='true']")
+      target.closest("button,input,textarea,select,a,summary,[role='button'],[contenteditable='true']")
     ) {
       return
     }
-    draft.focusComposer()
+    event.preventDefault()
+    draft.textareaRef.current?.focus()
   }
+
+  useEffect(() => {
+    if (compact || route !== 'chat' || !canEditComposer) return
+    const active = document.activeElement
+    const activeIsExternalEditor =
+      active instanceof HTMLElement &&
+      Boolean(active.closest("input,textarea,select,[contenteditable='true']")) &&
+      !composerRootRef.current?.contains(active)
+    if (activeIsExternalEditor) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const current = document.activeElement
+      const currentIsExternalEditor =
+        current instanceof HTMLElement &&
+        Boolean(current.closest("input,textarea,select,[contenteditable='true']")) &&
+        !composerRootRef.current?.contains(current)
+      if (!currentIsExternalEditor) {
+        draft.textareaRef.current?.focus()
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeThreadId, canEditComposer, compact, route, runtimeReady, draft.textareaRef])
 
   const handleAttachmentInput = (event: ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(event.target.files ?? [])
@@ -1292,9 +1314,11 @@ export function FloatingComposer({
   }
 
   return (
-    <div className={compact
-      ? 'ds-floating-composer ds-no-drag pointer-events-auto w-full pb-0 pt-0'
-      : 'ds-floating-composer ds-no-drag ds-chat-column-inset pointer-events-auto w-full max-w-4xl pb-3 pt-0'}
+    <div
+      ref={composerRootRef}
+      className={compact
+        ? 'ds-floating-composer ds-no-drag pointer-events-auto w-full pb-0 pt-0'
+        : 'ds-floating-composer ds-no-drag ds-chat-column-inset pointer-events-auto w-full max-w-4xl pb-3 pt-0'}
     >
       <FloatingComposerQueuedMessages
         messages={queuedMessages}
@@ -1701,7 +1725,7 @@ export function FloatingComposer({
           <textarea
             ref={draft.textareaRef}
             rows={1}
-            className={`ds-no-drag block min-w-0 resize-none break-words bg-transparent px-1 py-2.5 text-[15px] leading-[1.45] text-ds-ink placeholder:text-ds-faint focus:outline-none [overflow-wrap:anywhere] ${
+            className={`ds-no-drag block w-full min-w-0 resize-none break-words bg-transparent px-1 py-2.5 text-[15px] leading-[1.45] text-ds-ink placeholder:text-ds-faint focus:outline-none [overflow-wrap:anywhere] ${
               canEditComposer ? '' : 'opacity-80'
             } ${compact ? 'text-[14px] py-2' : 'min-h-[40px]'}`}
             placeholder={placeholder}
@@ -1891,7 +1915,11 @@ export function FloatingComposer({
                 aria-label={primaryActionLabel}
                 title={primaryActionLabel}
               >
-                <Send className="h-4 w-4" strokeWidth={2.2} />
+                {primaryActionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+                ) : (
+                  <Send className="h-4 w-4" strokeWidth={2.2} />
+                )}
               </button>
             </div>
           </div>

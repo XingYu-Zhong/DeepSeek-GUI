@@ -1807,7 +1807,7 @@ export function Workbench(): ReactElement {
                 ) : null
               }
             />
-            <div className="flex shrink-0 justify-center px-2 pb-3 pt-0 sm:px-4 md:px-6 lg:px-8">
+            <div className="ds-no-drag flex shrink-0 justify-center px-2 pb-3 pt-0 sm:px-4 md:px-6 lg:px-8">
               <FloatingComposer
                 input={input}
                 setInput={setInput}

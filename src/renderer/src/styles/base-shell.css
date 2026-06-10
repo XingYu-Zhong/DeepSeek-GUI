@@ -629,6 +629,22 @@ pre {
   background-clip: padding-box;
 }
 
+.ds-floating-composer,
+.ds-floating-composer *,
+.ds-chat-composer,
+.ds-chat-composer * {
+  -webkit-app-region: no-drag;
+}
+
+.ds-chat-composer textarea {
+  width: 100%;
+  cursor: text;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-app-region: no-drag;
+}
+
 .ds-chat-composer {
   overflow: visible;
   border-radius: 24px;
