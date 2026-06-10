@@ -9,6 +9,7 @@ import {
   imageTransferHasImages,
   parseCompactCommand,
   parseGoalCommand,
+  parseNewCommand,
   parseReviewCommand
 } from './FloatingComposer'
 import {
@@ -59,6 +60,14 @@ describe('FloatingComposer slash commands', () => {
       objective: 'ship the feature'
     })
     expect(parseGoalCommand('/goalkeeper')).toBe(false)
+  })
+
+  it('parses new session command aliases', () => {
+    expect(parseNewCommand('/new')).toBe(true)
+    expect(parseNewCommand('/new-thread')).toBe(true)
+    expect(parseNewCommand('/新建会话')).toBe(true)
+    expect(parseNewCommand('/new current task')).toBe(false)
+    expect(parseNewCommand('/new-topic')).toBe(false)
   })
 
   it('parses review command targets', () => {
@@ -365,6 +374,42 @@ describe('FloatingComposer capability controls', () => {
     const goalButton = html.match(/<button[^>]*>[\s\S]*?\/goal[\s\S]*?<\/button>/)?.[0] ?? ''
     expect(goalButton).toContain('/goal')
     expect(goalButton).not.toContain('disabled=""')
+  })
+
+  it('enables new session before a thread exists when a workspace is available', () => {
+    useChatStore.setState({
+      activeThreadId: null,
+      activeThreadGoal: null,
+      route: 'chat',
+      workspaceRoot: ''
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(FloatingComposer, {
+        input: '/new',
+        setInput: () => undefined,
+        mode: 'agent',
+        setMode: () => undefined,
+        busy: false,
+        runtimeReady: true,
+        hasActiveThread: false,
+        workspaceRootOverride: '/workspace/deepseek-gui',
+        composerModel: '',
+        composerPickList: [],
+        onComposerModelChange: () => undefined,
+        queuedMessages: [],
+        onRemoveQueuedMessage: () => undefined,
+        onSend: () => undefined,
+        onInterrupt: () => undefined,
+        onNewCommand: () => undefined,
+        attachmentUploadEnabled: false,
+        webAccessAvailable: false
+      })
+    )
+
+    const newButton = html.match(/<button[^>]*>[\s\S]*?\/new[\s\S]*?<\/button>/)?.[0] ?? ''
+    expect(newButton).toContain('/new')
+    expect(newButton).not.toContain('disabled=""')
   })
 
   it('enables plan mode before a thread exists when a workspace is available', () => {

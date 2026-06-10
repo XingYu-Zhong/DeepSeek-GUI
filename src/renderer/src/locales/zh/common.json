@@ -706,6 +706,8 @@
   "slashCommandApply": "应用命令",
   "slashCommandCurrent": "当前",
   "slashCommandEmpty": "没有匹配的命令，继续输入可直接发送原文。",
+  "slashCommandNewTitle": "新建会话",
+  "slashCommandNewDescription": "立即为当前项目创建一个新的会话。",
   "slashCommandPlanTitle": "计划",
   "slashCommandPlanDescription": "在输入框里添加 Plan 标识，发送后先生成计划。",
   "slashCommandPlanActiveDescription": "计划模式已经开启。",

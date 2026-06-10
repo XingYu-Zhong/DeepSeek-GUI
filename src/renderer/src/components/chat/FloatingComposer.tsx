@@ -54,15 +54,17 @@ import {
   COMPACT_COMMAND_ALIASES,
   getGoalPanelDraftObjective,
   getSlashQuery,
+  NEW_COMMAND_ALIASES,
   parseBtwCommand,
   parseCompactCommand,
   parseGoalCommand,
+  parseNewCommand,
   parseReviewCommand,
   REVIEW_COMMAND_ALIASES,
   type SlashCommand,
   type SlashCommandId
 } from './floating-composer-commands'
-export { parseBtwCommand, parseCompactCommand, parseGoalCommand, parseReviewCommand } from './floating-composer-commands'
+export { parseBtwCommand, parseCompactCommand, parseGoalCommand, parseNewCommand, parseReviewCommand } from './floating-composer-commands'
 import {
   formatCompactNumber,
   formatCost,
@@ -139,6 +141,7 @@ type Props = {
   onSend: () => void
   onInterrupt: (options?: { discard?: boolean }) => void
   onPlanCommand?: () => void
+  onNewCommand?: () => void
   onReviewCommand?: (target: ReviewTarget) => void
   onExecutionSettingsChange?: (patch: Partial<ComposerExecutionSettings>) => void
   onOpenChanges?: () => void
@@ -506,6 +509,7 @@ export function FloatingComposer({
   onSend,
   onInterrupt,
   onPlanCommand,
+  onNewCommand,
   onReviewCommand,
   onExecutionSettingsChange,
   onOpenChanges,
@@ -578,9 +582,11 @@ export function FloatingComposer({
   const showIntentToolbar = !compact && route === 'chat'
   const showComposerMenuButton = showIntentToolbar
   const canTogglePlanMode = canCompose && Boolean(onPlanCommand)
+  const canCreateNewThread = runtimeReady && route !== 'claw' && Boolean(effectiveWorkspaceRoot) && Boolean(onNewCommand)
   const canOpenGoalPanel = canCompose && route !== 'claw'
   const canRunReview = canCompose && route !== 'claw' && Boolean(onReviewCommand)
-  const canOpenComposerMenu = showComposerMenuButton && (canTogglePlanMode || canOpenGoalPanel || canRunReview)
+  const canOpenComposerMenu = showComposerMenuButton
+    && (canTogglePlanMode || canCreateNewThread || canOpenGoalPanel || canRunReview)
   const showToolbarStartControls = showComposerMenuButton
   const showChangeSummary = !compact && route === 'chat' && changedFiles.length > 0
   const effectiveChangedFileStats = changedFileStats ?? changedFiles.reduce(
@@ -640,6 +646,16 @@ export function FloatingComposer({
     const threadActionDisabled = !runtimeReady || busy || !activeThreadId
     const goalActionDisabled = !canOpenGoalPanel
     const commands: SlashCommand[] = []
+    if (route !== 'claw') {
+      commands.push({
+        id: 'new',
+        title: t('slashCommandNewTitle'),
+        description: t('slashCommandNewDescription'),
+        keywords: ['create', 'new', 'thread', 'chat', '会话', '新建', ...NEW_COMMAND_ALIASES],
+        icon: <Plus className="h-4 w-4" strokeWidth={1.9} />,
+        disabled: !canCreateNewThread
+      })
+    }
     if (onPlanCommand) {
       commands.push({
         id: 'plan',
@@ -768,6 +784,7 @@ export function FloatingComposer({
     effectiveWorkspaceRoot,
     hideBtwCommand,
     onBtwCommand,
+    canCreateNewThread,
     onPlanCommand,
     onReviewCommand,
     route,
@@ -947,6 +964,12 @@ export function FloatingComposer({
       draft.focusComposer()
       return
     }
+    if (commandId === 'new' && onNewCommand) {
+      setInput('')
+      onNewCommand()
+      draft.focusComposer()
+      return
+    }
     if (commandId === 'compact') {
       setInput('')
       void compactActiveThread()
@@ -1108,6 +1131,14 @@ export function FloatingComposer({
       return
     }
     if (runGoalCommand(parsedGoalCommand)) {
+      return
+    }
+    if (onNewCommand && parseNewCommand(input)) {
+      const command = slashCommands.find((item) => item.id === 'new')
+      if (command?.disabled) return
+      setInput('')
+      onNewCommand()
+      draft.focusComposer()
       return
     }
     const compactCommand = parseCompactCommand(input)

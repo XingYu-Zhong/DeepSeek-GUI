@@ -1881,6 +1881,7 @@ export function Workbench(): ReactElement {
                 onRemoveQueuedMessage={removeQueuedMessage}
                 onInterrupt={(options) => void interrupt(options)}
                 onPlanCommand={() => void handleGuiPlanCommand()}
+                onNewCommand={() => void createThread({ workspaceRoot: activeSkillWorkspace, forceNew: true })}
                 onReviewCommand={(target) => void reviewActiveThread(target)}
                 onExecutionSettingsChange={updateComposerExecutionSettings}
                 onOpenChanges={() => setRightPanelMode('changes')}

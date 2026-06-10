@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import type { ReviewTarget } from '../../agent/types'
 
-export type BuiltinSlashCommandId = 'plan' | 'goal' | 'review' | 'compact' | 'fork' | 'archive' | 'restore' | 'btw'
+export type BuiltinSlashCommandId = 'new' | 'plan' | 'goal' | 'review' | 'compact' | 'fork' | 'archive' | 'restore' | 'btw'
 export type SkillSlashCommandId = `skill:${string}`
 export type SlashCommandId = BuiltinSlashCommandId | SkillSlashCommandId
 
@@ -38,6 +38,14 @@ export const COMPACT_COMMAND_ALIASES = [
   '总结'
 ]
 
+export const NEW_COMMAND_ALIASES = [
+  'new',
+  'new-chat',
+  'new-thread',
+  '新会话',
+  '新建会话'
+]
+
 export const REVIEW_COMMAND_ALIASES = [
   'review',
   'code-review',
@@ -71,6 +79,14 @@ export function parseCompactCommand(input: string): CompactCommand | null {
     return reason ? { reason } : {}
   }
   return null
+}
+
+export function parseNewCommand(input: string): boolean {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith('/')) return false
+  const body = trimmed.slice(1).trimStart()
+  const lowerBody = body.toLowerCase()
+  return NEW_COMMAND_ALIASES.some((alias) => lowerBody === alias.toLowerCase())
 }
 
 export function parseGoalCommand(input: string): GoalCommand | false {

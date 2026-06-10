@@ -706,6 +706,8 @@
   "slashCommandApply": "Apply command",
   "slashCommandCurrent": "Current",
   "slashCommandEmpty": "No matching command. Keep typing to send the raw text instead.",
+  "slashCommandNewTitle": "New session",
+  "slashCommandNewDescription": "Create a new session for the current project immediately.",
   "slashCommandPlanTitle": "Plan",
   "slashCommandPlanDescription": "Add a Plan marker to the composer before sending.",
   "slashCommandPlanActiveDescription": "Plan mode is already active.",
