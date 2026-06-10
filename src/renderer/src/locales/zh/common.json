@@ -1223,6 +1223,8 @@
   "thoughtSteps": "思考（{{count}} 步）",
   "timelineShowEarlierTurns": "显示更早的 {{count}} 轮对话",
   "timelineCollapseEarlierTurns": "仅显示最近对话",
+  "timelineJumpRailLabel": "跳转到某次提问",
+  "timelineJumpTurn": "跳转到第 {{index}} 次提问",
   "groupEditedFiles": "修改了 {{count}} 个文件",
   "groupEditedFile": "修改了 1 个文件",
   "turnChangeFilesOne": "已编辑 1 个文件",

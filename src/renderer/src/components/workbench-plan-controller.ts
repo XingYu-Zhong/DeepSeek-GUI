@@ -387,7 +387,9 @@ export function useWorkbenchPlanController({
     if (latestPlanBlock && lastLoadedPlanBlockIdRef.current === latestPlanBlock.blockId) return
     if (!latestPlanBlock) return
     lastLoadedPlanBlockIdRef.current = latestPlanBlock.blockId
-    const shouldOpen = planTurnInFlightRef.current || mode === 'plan'
+    // Keep generated plans inline until the user explicitly opens the preview.
+    // This avoids squeezing the chat on portrait/narrow screens after a plan turn.
+    const shouldOpen = false
     planTurnInFlightRef.current = false
     void loadPlanFromMeta(latestPlanBlock.meta, shouldOpen).catch((error) => {
       useGuiPlanStore.getState().setOperationStatus(
@@ -395,7 +397,7 @@ export function useWorkbenchPlanController({
         error instanceof Error ? error.message : String(error)
       )
     })
-  }, [latestPlanBlock, loadPlanFromMeta, mode])
+  }, [latestPlanBlock, loadPlanFromMeta])
 
   useEffect(() => {
     if (!busy) planTurnInFlightRef.current = false

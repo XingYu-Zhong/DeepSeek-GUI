@@ -22,7 +22,7 @@ import { getProvider } from '../agent/registry'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import { useChatStore } from '../store/chat-store'
 import { isClawThread } from '../store/chat-store-helpers'
-import { hasPendingRuntimeWork } from '../store/chat-store-runtime-helpers'
+import { threadHasPendingRuntimeWork } from '../store/chat-store-runtime-helpers'
 import {
   extractLatestTurnAutoOpenDevPreviewUrls,
   extractLatestTurnDevPreviewUrls
@@ -356,6 +356,7 @@ export function Workbench(): ReactElement {
   const [attachmentUploadError, setAttachmentUploadError] = useState<string | null>(null)
   const [connectPhoneSidebarOpen, setConnectPhoneSidebarOpen] = useState(false)
   const [runtimeLogPath, setRuntimeLogPath] = useState('')
+  const [planPanelOverlayPreferred, setPlanPanelOverlayPreferred] = useState(false)
   const writeAssistantOpen = useWriteWorkspaceStore((s) => s.assistantOpen)
   const setWriteAssistantOpen = useWriteWorkspaceStore((s) => s.setAssistantOpen)
   const writeAssistantModel = useWriteWorkspaceStore((s) => s.assistantModel)
@@ -488,6 +489,33 @@ export function Workbench(): ReactElement {
       await useChatStore.getState().refreshThreads()
     }
   })
+  const planPanelInOverlay =
+    route === 'chat' &&
+    !activeSddDraft &&
+    rightPanelMode === 'plan' &&
+    planPanelOverlayPreferred
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(max-width: 900px), (orientation: portrait)')
+    const sync = (): void => setPlanPanelOverlayPreferred(media.matches)
+    sync()
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', sync)
+      return () => media.removeEventListener('change', sync)
+    }
+    media.addListener(sync)
+    return () => media.removeListener(sync)
+  }, [])
+
+  useEffect(() => {
+    if (!planPanelInOverlay) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setRightPanelMode(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [planPanelInOverlay, setRightPanelMode])
 
   useEffect(() => {
     const runDesktopShortcut = (command: DesktopCommand): void => {
@@ -1118,7 +1146,7 @@ export function Workbench(): ReactElement {
       return
     }
     const chatSnapshot = useChatStore.getState()
-    if (chatSnapshot.busy || chatSnapshot.blocks.some(hasPendingRuntimeWork)) {
+    if (chatSnapshot.busy || threadHasPendingRuntimeWork(chatSnapshot.blocks)) {
       setError(t('composerQueuePlaceholder'))
       return
     }
@@ -1539,9 +1567,24 @@ export function Workbench(): ReactElement {
   const writeRuntimeBannerMessage = runtimeConnection !== 'ready'
     ? (error?.trim() || t('writeRuntimeUnavailable'))
     : null
+  const rightPanelDockedVisible = rightPanelVisible && !planPanelInOverlay
+
+  const renderPlanPanel = (className: string): ReactElement => (
+    <PlanPanel
+      workspaceRoot={workspaceRoot}
+      activeThreadId={activeThreadId}
+      runtimeReady={runtimeConnection === 'ready'}
+      busy={busy}
+      className={className}
+      onCollapse={closeRightPanel}
+      onBuildPlan={() => void buildGuiPlan()}
+      onVerifyPlan={() => void verifyGuiPlan()}
+      onReplanChanged={(ids) => void replanChangedRequirements(ids)}
+    />
+  )
 
   const renderRightPanel = (): ReactElement | null => {
-    if (!rightPanelVisible) return null
+    if (!rightPanelDockedVisible) return null
     return (
       <>
         <div
@@ -1632,17 +1675,7 @@ export function Workbench(): ReactElement {
                 onCollapse={closeRightPanel}
               />
             ) : rightPanelMode === 'plan' ? (
-              <PlanPanel
-                workspaceRoot={workspaceRoot}
-                activeThreadId={activeThreadId}
-                runtimeReady={runtimeConnection === 'ready'}
-                busy={busy}
-                className="h-full max-h-full w-full"
-                onCollapse={closeRightPanel}
-                onBuildPlan={() => void buildGuiPlan()}
-                onVerifyPlan={() => void verifyGuiPlan()}
-                onReplanChanged={(ids) => void replanChangedRequirements(ids)}
-              />
+              renderPlanPanel('h-full max-h-full w-full')
             ) : (
               <WorkspaceFilePreviewPanel
                 target={filePreviewTarget}
@@ -1654,6 +1687,30 @@ export function Workbench(): ReactElement {
           </Suspense>
         </div>
       </>
+    )
+  }
+
+  const renderPlanPanelOverlay = (): ReactElement | null => {
+    if (!planPanelInOverlay) return null
+    return (
+      <div
+        className="ds-plan-panel-overlay ds-no-drag"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('planPanelTitle')}
+      >
+        <button
+          type="button"
+          className="ds-plan-panel-overlay-backdrop"
+          aria-label={t('cancel')}
+          onClick={closeRightPanel}
+        />
+        <div className="ds-plan-panel-overlay-card">
+          <Suspense fallback={<div className="h-full w-full bg-ds-sidebar" />}>
+            {renderPlanPanel('h-full max-h-full w-full')}
+          </Suspense>
+        </div>
+      </div>
     )
   }
 
@@ -1900,7 +1957,7 @@ export function Workbench(): ReactElement {
           </div>
 
           {route === 'chat' && !activeSddDraft ? (
-            <SideConversationPanel rightOffset={rightPanelVisible ? rightSidebarWidth + 24 : 24} />
+            <SideConversationPanel rightOffset={rightPanelDockedVisible ? rightSidebarWidth + 24 : 24} />
           ) : null}
 
           {renderRightPanel()}
@@ -1908,6 +1965,7 @@ export function Workbench(): ReactElement {
 
           </>
         )}
+        {renderPlanPanelOverlay()}
       </main>
     </div>
   )

@@ -40,7 +40,6 @@ import {
   collectAssistantTextForTurn,
   findLatestUserBlockId,
   findReusableEmptyThreadId,
-  hasPendingRuntimeWork,
   reconcileOptimisticUserBlock,
   settlePendingRuntimeWorkAfterInterrupt,
   threadSnapshotLooksRunning,

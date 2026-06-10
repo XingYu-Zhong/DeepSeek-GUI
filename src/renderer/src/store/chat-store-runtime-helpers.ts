@@ -29,6 +29,31 @@ export function hasPendingRuntimeWork(block: ChatBlock): boolean {
   return false
 }
 
+function assistantBlockHasVisibleContent(block: Extract<ChatBlock, { kind: 'assistant' }>): boolean {
+  const withoutThink = block.text.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim()
+  return withoutThink.length > 0
+}
+
+export function threadHasPendingRuntimeWork(blocks: ChatBlock[]): boolean {
+  let pendingInCurrentTurn = false
+
+  for (const block of blocks) {
+    if (block.kind === 'user') {
+      pendingInCurrentTurn = false
+      continue
+    }
+    if (hasPendingRuntimeWork(block)) {
+      pendingInCurrentTurn = true
+      continue
+    }
+    if (pendingInCurrentTurn && block.kind === 'assistant' && assistantBlockHasVisibleContent(block)) {
+      pendingInCurrentTurn = false
+    }
+  }
+
+  return pendingInCurrentTurn
+}
+
 export function settlePendingRuntimeWorkAfterInterrupt(blocks: ChatBlock[]): ChatBlock[] {
   let changed = false
   const next = blocks.map((block): ChatBlock => {
@@ -61,7 +86,7 @@ export function threadSnapshotLooksRunning(blocks: ChatBlock[], threadStatus?: s
   if (threadStatus != null && threadStatus.trim()) {
     return runtimeStatusLooksRunning(threadStatus)
   }
-  return blocks.some(hasPendingRuntimeWork)
+  return threadHasPendingRuntimeWork(blocks)
 }
 
 export function findLatestUserBlockId(blocks: ChatBlock[]): string | null {

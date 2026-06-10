@@ -2235,6 +2235,107 @@ pre {
   container-type: inline-size;
 }
 
+.timeline-jump-rail {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 30;
+  display: flex;
+  max-height: min(48vh, 22rem);
+  flex-direction: column;
+  gap: 0.25rem;
+  align-self: flex-end;
+  overflow-y: auto;
+  margin: 0.65rem 0.65rem -0.65rem 0;
+  border: 1px solid var(--ds-border-muted);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-surface-card) 88%, transparent);
+  padding: 0.3rem;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(18px);
+  scrollbar-width: none;
+}
+
+.timeline-jump-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-jump-rail-button {
+  display: inline-flex;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.timeline-jump-rail-button:hover,
+.timeline-jump-rail-button:focus-visible {
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.ds-plan-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.75rem, 3vw, 2rem);
+}
+
+.ds-plan-panel-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background:
+    radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--ds-accent) 12%, transparent), transparent 32%),
+    color-mix(in srgb, var(--ds-bg-main) 74%, rgba(0, 0, 0, 0.18));
+  backdrop-filter: blur(12px);
+}
+
+.ds-plan-panel-overlay-card {
+  position: relative;
+  width: min(92vw, 720px);
+  height: min(88vh, 900px);
+  min-height: min(36rem, 88vh);
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: 28px;
+  background: var(--ds-bg-sidebar);
+  box-shadow:
+    0 28px 80px rgba(15, 23, 42, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--ds-border-muted) 60%, transparent);
+}
+
+@media (max-width: 720px) {
+  .timeline-jump-rail {
+    display: none;
+  }
+
+  .ds-plan-panel-overlay {
+    padding: 0.5rem;
+  }
+
+  .ds-plan-panel-overlay-card {
+    width: calc(100vw - 1rem);
+    height: calc(100vh - 1rem);
+    min-height: 0;
+    border-radius: 22px;
+  }
+}
+
 .chat-topbar {
   margin-top: 0.35rem;
   min-height: 40px;

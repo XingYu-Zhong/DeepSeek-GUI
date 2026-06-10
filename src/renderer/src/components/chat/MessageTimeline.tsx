@@ -1,8 +1,9 @@
 import type { ReactElement, RefObject } from 'react'
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatBlock, RuntimeConnectionStatus } from '../../agent/types'
 import { useChatStore } from '../../store/chat-store'
+import { threadHasPendingRuntimeWork } from '../../store/chat-store-runtime-helpers'
 import { useTimelineStores } from './use-timeline-stores'
 import { useTimelineScroll } from './use-timeline-scroll'
 import { deriveTurnSections } from './derive-turn-sections'
@@ -16,7 +17,6 @@ import {
   sameTurnContent,
   splitThink,
   stableTurnKey,
-  turnHasPendingRuntimeWork,
   type Turn
 } from './message-timeline-turns'
 import { extractPlanMetadataFromBlock } from '../../plan/plan-tool'
@@ -67,6 +67,13 @@ function blockScrollStamp(block: ChatBlock | undefined): string {
   }
 }
 
+function turnPreview(turn: Turn, fallback: string): string {
+  const text = turn.user?.text.trim() ?? ''
+  if (!text) return fallback
+  const oneLine = text.replace(/\s+/g, ' ')
+  return oneLine.length > 48 ? `${oneLine.slice(0, 47).trimEnd()}...` : oneLine
+}
+
 export function MessageTimeline({
   blocks,
   liveReasoning,
@@ -101,6 +108,7 @@ export function MessageTimeline({
   const hasContent = blocks.length > 0 || live || liveReasoning
   const endRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const turnRefMap = useRef(new Map<string, HTMLDivElement>())
 
   const turns = useMemo(() => groupTurns(blocks), [blocks])
   const latestBlock = blocks[blocks.length - 1]
@@ -135,6 +143,29 @@ export function MessageTimeline({
     () => (hiddenTurnCount > 0 ? turns.slice(hiddenTurnCount) : turns),
     [hiddenTurnCount, turns]
   )
+  const visibleTurnAnchors = useMemo(
+    () => {
+      const anchors: { key: string; label: string; title: string }[] = []
+      let questionIndex = turns
+        .slice(0, hiddenTurnCount)
+        .filter((turn) => turn.user)
+        .length
+
+      visibleTurns.forEach((turn, index) => {
+        if (!turn.user) return
+        questionIndex += 1
+        const absoluteTurnIndex = hiddenTurnCount + index
+        const key = stableTurnKey(turn, absoluteTurnIndex)
+        anchors.push({
+          key,
+          label: String(questionIndex),
+          title: turnPreview(turn, t('timelineJumpTurn', { index: questionIndex }))
+        })
+      })
+      return anchors
+    },
+    [hiddenTurnCount, t, turns, visibleTurns]
+  )
   const forkedFromTitle = activeThread?.forkedFromTitle?.trim() ?? ''
   const forkBoundaryTurnCount =
     typeof activeThread?.forkedFromTurnCount === 'number'
@@ -150,8 +181,33 @@ export function MessageTimeline({
     return () => window.clearInterval(id)
   }, [busy, currentTurnUserId])
 
+  const jumpToTurn = (key: string): void => {
+    const target = turnRefMap.current.get(key)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
-    <div ref={containerRef} className="ds-no-drag flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+    <div ref={containerRef} className="ds-no-drag relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+      {visibleTurnAnchors.length > 2 ? (
+        <nav
+          aria-label={t('timelineJumpRailLabel')}
+          className="timeline-jump-rail"
+        >
+          {visibleTurnAnchors.map((anchor) => (
+            <button
+              key={anchor.key}
+              type="button"
+              className="timeline-jump-rail-button"
+              title={anchor.title}
+              aria-label={anchor.title}
+              onClick={() => jumpToTurn(anchor.key)}
+            >
+              {anchor.label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
       <div className="ds-message-timeline-content ds-chat-column-inset mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-8 pb-10 pt-8">
         {!hasContent || !activeThreadId ? (
           <MessageTimelineEmptyHero
@@ -200,13 +256,24 @@ export function MessageTimeline({
             typeof reasoningFirst === 'number' && typeof reasoningLast === 'number'
               ? Math.max(0, reasoningLast - reasoningFirst)
               : undefined
-          const turnPending = turnHasPendingRuntimeWork(turn)
+          const turnPending = threadHasPendingRuntimeWork(turn.blocks)
           const isLatestTurn = index === visibleTurns.length - 1
           const hasLiveStream = isLatestTurn && !!(liveReasoning.trim() || live.trim())
           const showForkPoint =
             forkBoundaryTurnCount !== undefined && absoluteTurnIndex === forkBoundaryTurnCount
+          const turnKey = stableTurnKey(turn, absoluteTurnIndex)
           return (
-            <Fragment key={stableTurnKey(turn, absoluteTurnIndex)}>
+            <div
+              key={turnKey}
+              ref={(node) => {
+                if (node) {
+                  turnRefMap.current.set(turnKey, node)
+                } else {
+                  turnRefMap.current.delete(turnKey)
+                }
+              }}
+              className="scroll-mt-6"
+            >
               {showForkPoint ? <ThreadForkPoint parentTitle={forkedFromTitle} /> : null}
               <MemoMessageTurn
                 turn={turn}
@@ -221,7 +288,7 @@ export function MessageTimeline({
                 onOpenPlan={onOpenPlan}
                 viewportRef={containerRef}
               />
-            </Fragment>
+            </div>
           )
         })}
 

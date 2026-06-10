@@ -65,10 +65,6 @@ export function isProcessBlock(block: ChatBlock): boolean {
   )
 }
 
-export function turnHasPendingRuntimeWork(turn: Turn): boolean {
-  return turn.blocks.some(blockHasPendingRuntimeWork)
-}
-
 export function findTrailingAssistantContentStart(blocks: ChatBlock[]): number {
   let start = blocks.length
 

@@ -1223,6 +1223,8 @@
   "thoughtSteps": "Thought ({{count}} steps)",
   "timelineShowEarlierTurns": "Show {{count}} earlier turns",
   "timelineCollapseEarlierTurns": "Show recent turns only",
+  "timelineJumpRailLabel": "Jump to a question",
+  "timelineJumpTurn": "Jump to question {{index}}",
   "groupEditedFiles": "Edited {{count}} files",
   "groupEditedFile": "Edited 1 file",
   "turnChangeFilesOne": "Edited 1 file",

@@ -40,8 +40,8 @@ import {
   collectAssistantTextForTurn,
   findLatestUserBlockId,
   findReusableEmptyThreadId,
-  hasPendingRuntimeWork,
   reconcileOptimisticUserBlock,
+  threadHasPendingRuntimeWork,
   threadSnapshotLooksRunning,
   threadBelongsToWorkspace
 } from './chat-store-runtime-helpers'
@@ -363,7 +363,7 @@ export function createThreadActions(
       const writeThreadId = await get().ensureWriteThreadForWorkspace()
       if (!writeThreadId) return false
     }
-    const hasPendingActiveTurn = get().blocks.some(hasPendingRuntimeWork)
+    const hasPendingActiveTurn = threadHasPendingRuntimeWork(get().blocks)
     if (get().busy || hasPendingActiveTurn) {
       if (overrides?.guiPlan) {
         set({ error: i18n.t('common:composerQueuePlaceholder') })
@@ -713,7 +713,7 @@ export function createThreadActions(
       set({ error: i18n.t('common:reviewUnavailable') })
       return false
     }
-    if (get().busy || get().blocks.some(hasPendingRuntimeWork)) {
+    if (get().busy || threadHasPendingRuntimeWork(get().blocks)) {
       set({ error: i18n.t('common:composerQueuePlaceholder') })
       return false
     }
