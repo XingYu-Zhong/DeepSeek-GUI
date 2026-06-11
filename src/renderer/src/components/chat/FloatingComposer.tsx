@@ -1908,14 +1908,18 @@ export function FloatingComposer({
                 type="button"
                 disabled={primaryActionDisabled}
                 onClick={handlePrimaryAction}
-                className="ds-no-drag flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.22)] transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-ds-card disabled:text-ds-faint disabled:shadow-none dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:disabled:bg-ds-card dark:disabled:text-ds-faint"
+                className={`ds-no-drag flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed ${
+                  primaryActionDisabled
+                    ? 'bg-[#b1c1ff] text-white hover:bg-[#b1c1ff] dark:bg-[#3e5081] dark:text-white/60 dark:hover:bg-[#3e5081]'
+                    : 'bg-[#3964fe] text-white hover:bg-[#2f56e0] dark:bg-[#5686fe] dark:text-white dark:hover:bg-[#4a74e0]'
+                }`}
                 aria-label={primaryActionLabel}
                 title={primaryActionLabel}
               >
                 {primaryActionLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+                  <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2.5} />
                 ) : (
-                  <Send className="h-4 w-4" strokeWidth={2.2} />
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8.3125 0.981587C8.66767 1.0545 8.97902 1.20558 9.2627 1.43374C9.48724 1.61438 9.73029 1.85933 9.97949 2.10854L14.707 6.83608L13.293 8.25014L9 3.95717V15.0431H7V3.95717L2.70703 8.25014L1.29297 6.83608L6.02051 2.10854C6.26971 1.85933 6.51277 1.61438 6.7373 1.43374C6.97662 1.24126 7.28445 1.04542 7.6875 0.981587C7.8973 0.94841 8.1031 0.956564 8.3125 0.981587Z" fill="currentColor" /></svg>
                 )}
               </button>
             </div>
