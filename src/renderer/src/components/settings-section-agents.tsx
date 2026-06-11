@@ -114,8 +114,8 @@ function normalizeModelId(model: string | undefined): string {
 }
 
 const FRIENDLY_MODEL_NAMES: Record<string, string> = {
-  'deepseek-v4-pro': 'V4 Pro',
-  'deepseek-v4-flash': 'V4 Flash',
+  'deepseek-v4-pro': 'V4-Pro',
+  'deepseek-v4-flash': 'V4-Flash',
   'deepseek-chat': 'DeepSeek Chat',
   'deepseek-reasoner': 'DeepSeek Reasoner'
 }

@@ -190,8 +190,8 @@ export function isClawThread(
 
 const FRIENDLY_MODEL_NAMES: Record<string, string> = {
   'auto': 'Auto',
-  'deepseek-v4-pro': 'V4 Pro',
-  'deepseek-v4-flash': 'V4 Flash'
+  'deepseek-v4-pro': 'V4-Pro',
+  'deepseek-v4-flash': 'V4-Flash'
 }
 
 function friendlyModelName(model: string): string {
