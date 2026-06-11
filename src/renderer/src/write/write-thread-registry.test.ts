@@ -33,7 +33,7 @@ function thread(id: string, workspace: string): NormalizedThread {
     id,
     title: id,
     updatedAt: '2026-05-24T00:00:00.000Z',
-    model: 'auto',
+    model: 'deepseek-v4-pro',
     mode: 'agent',
     workspace
   }

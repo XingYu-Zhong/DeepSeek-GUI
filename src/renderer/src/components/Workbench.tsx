@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
-import type { ApprovalPolicy, SandboxMode } from '@shared/app-settings'
+import { DEFAULT_CLAW_MODEL, type ApprovalPolicy, type SandboxMode } from '@shared/app-settings'
 import { parseClawCommand } from '@shared/claw-commands'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '@shared/default-composer-models'
 import { buildGuiPlanId, buildPlanRelativePath } from '@shared/gui-plan'
@@ -647,7 +647,6 @@ export function Workbench(): ReactElement {
       '',
       `- \`/help\`: ${t('clawHelpCommandHelp')}`,
       `- \`/new\`: ${t('clawHelpCommandNew')}`,
-      `- \`/model auto\`: ${t('clawHelpCommandModelAuto')}`,
       `- \`/model pro\`: ${t('clawHelpCommandModelPro')}`,
       `- \`/model flash\`: ${t('clawHelpCommandModelFlash')}`,
       `- \`/model\`: ${t('clawHelpCommandModelShow')}`
@@ -1388,7 +1387,7 @@ export function Workbench(): ReactElement {
         }
         setInput('')
         const replyText = t('clawModelCurrent', {
-          model: activeClawChannel?.model ?? 'auto'
+          model: activeClawChannel?.model ?? DEFAULT_CLAW_MODEL
         })
         appendLocalClawTurn(v, replyText)
         void mirrorClawCommand(v, replyText)
@@ -1841,7 +1840,7 @@ export function Workbench(): ReactElement {
                 hasActiveThread={Boolean(activeThreadId)}
                 composerModel={
                   route === 'claw'
-                    ? clawChannels.find((channel) => channel.id === activeClawChannelId)?.model ?? 'auto'
+                    ? clawChannels.find((channel) => channel.id === activeClawChannelId)?.model ?? DEFAULT_CLAW_MODEL
                     : composerModel
                 }
                 composerPickList={composerPickList}

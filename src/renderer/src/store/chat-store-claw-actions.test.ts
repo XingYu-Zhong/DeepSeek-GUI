@@ -18,7 +18,7 @@ function channel(overrides: Partial<ClawImChannelV1> = {}): ClawImChannelV1 {
     provider: 'feishu',
     label: 'Feishu Agent01',
     enabled: true,
-    model: 'auto',
+    model: 'deepseek-v4-pro',
     threadId: 'thr-codewhale-channel',
     workspaceRoot: '/Users/zxy/.deepseekgui/claw/agent01',
     agentProfile: {
@@ -168,7 +168,7 @@ describe('chat-store Claw actions helpers', () => {
       currentTurnId: null,
       currentTurnUserId: null,
       inspectorSelectedId: null,
-      composerModel: 'auto',
+      composerModel: 'deepseek-v4-pro',
       error: 'previous error'
     }
     const set = vi.fn((partial: Record<string, unknown> | ((current: typeof state) => Record<string, unknown>)) => {

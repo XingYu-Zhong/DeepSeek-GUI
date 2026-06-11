@@ -132,7 +132,7 @@ export function createConnectPhoneChannelOptions(provider: ClawImProvider = 'fei
   im: Partial<ClawImSettingsV1>
 } {
   return {
-    model: 'auto',
+    model: 'deepseek-v4-pro',
     enabled: true,
     im: {
       enabled: true,

@@ -9,6 +9,7 @@ import {
   compactCodeWorkspaceRoots,
   hydrateBlockModelLabels,
   isClawThread,
+  mergeComposerPickList,
   newClawChannel,
   normalizeTurnModelMap,
   rememberTurnModel
@@ -41,7 +42,7 @@ function clawChannel(): ClawImChannelV1 {
     provider: 'feishu',
     label: 'Feishu Agent',
     enabled: true,
-    model: 'auto',
+    model: 'deepseek-v4-pro',
     threadId: 'kun-channel',
     workspaceRoot: '/Users/zxy/project',
     agentProfile: {
@@ -131,6 +132,14 @@ describe('chat-store Claw helpers', () => {
 
     expect(ids.has('kun-channel')).toBe(true)
     expect(ids.has('kun-conversation')).toBe(true)
+  })
+
+  it('omits legacy auto from composer model pick lists', () => {
+    expect(mergeComposerPickList(true, ['auto', 'deepseek-v4-flash', 'custom-model'])).toEqual([
+      'custom-model',
+      'deepseek-v4-flash',
+      'deepseek-v4-pro'
+    ])
   })
 
   it('uses product default agent names for new Claw channels', () => {

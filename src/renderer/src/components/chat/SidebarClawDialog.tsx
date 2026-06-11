@@ -24,6 +24,7 @@ import type {
   ClawImProvider,
   ClawRunMode
 } from '@shared/app-settings'
+import { DEFAULT_CLAW_MODEL } from '@shared/app-settings'
 import type { ClawImInstallQrResult } from '@shared/ds-gui-api'
 import { confirmDialog } from '../../lib/confirm-dialog'
 import {
@@ -130,7 +131,7 @@ export function ClawAddImDialog({
   const [activeStep, setActiveStep] = useState<ClawDialogStep>('defaults')
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
   const [officialInstallTarget, setOfficialInstallTarget] = useState<ClawInstallTarget>('feishu')
-  const [channelModel, setChannelModel] = useState<string>('auto')
+  const [channelModel, setChannelModel] = useState<string>(DEFAULT_CLAW_MODEL)
   const [channelWorkspaceRoot, setChannelWorkspaceRoot] = useState('')
   const [channelEnabled, setChannelEnabled] = useState(true)
   const [showSecret, setShowSecret] = useState(false)
@@ -205,7 +206,7 @@ export function ClawAddImDialog({
     } else {
       const target = provider === 'weixin' ? 'weixin' : 'feishu'
       setOfficialInstallTarget(target)
-      setChannelModel('auto')
+      setChannelModel(DEFAULT_CLAW_MODEL)
       setChannelWorkspaceRoot('')
       setChannelEnabled(true)
       setAgentProfile({

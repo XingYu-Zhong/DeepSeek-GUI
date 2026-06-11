@@ -101,7 +101,7 @@ function imCommandHelpText(settings: AppSettingsV1): string {
       '- `/help`：查看命令帮助',
       '- `/new`：当前 IM 连接开启新话题',
       '- `/model`：查看当前模型',
-      '- `/model auto|pro|flash`：切换当前 IM 连接模型',
+      '- `/model pro|flash`：切换当前 IM 连接模型',
       '也支持 `-new`、`-help`、`-model flash` 这种写法。'
     ].join('\n')
   }
@@ -110,7 +110,7 @@ function imCommandHelpText(settings: AppSettingsV1): string {
     '- `/help`: show command help',
     '- `/new`: start a new topic for this IM connection',
     '- `/model`: show the current model',
-    '- `/model auto|pro|flash`: switch this IM connection model',
+    '- `/model pro|flash`: switch this IM connection model',
     '`-new`, `-help`, and `-model flash` are supported too.'
   ].join('\n')
 }
@@ -118,8 +118,8 @@ function imCommandHelpText(settings: AppSettingsV1): string {
 function imModelCommandHint(settings: AppSettingsV1): string {
   const ids = CLAW_MODEL_IDS.join(', ')
   return isChineseLocale(settings)
-    ? `可使用 /model auto、/model pro 或 /model flash。可用模型：${ids}。`
-    : `Use /model auto, /model pro, or /model flash. Available models: ${ids}.`
+    ? `可使用 /model pro 或 /model flash。可用模型：${ids}。`
+    : `Use /model pro or /model flash. Available models: ${ids}.`
 }
 
 function imModelCurrentText(settings: AppSettingsV1, model: string): string {

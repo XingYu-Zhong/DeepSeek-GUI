@@ -135,7 +135,7 @@ function defaultModelProviderProfile(apiKey: string, baseUrl: string): ModelProv
     apiKey: apiKey.trim(),
     baseUrl: normalizeDeepseekBaseUrl(baseUrl),
     endpointFormat: DEFAULT_MODEL_ENDPOINT_FORMAT,
-    models: DEFAULT_COMPOSER_MODEL_IDS.filter((id) => id !== 'auto')
+    models: [...DEFAULT_COMPOSER_MODEL_IDS]
   }
 }
 

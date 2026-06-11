@@ -20,7 +20,6 @@ export function parseClawCommand(text: string): ClawCommand | null {
   if (!match) return null
   const value = (match[1] ?? '').trim().toLowerCase()
   if (!value) return { kind: 'showModel' }
-  if (value === 'auto' || value === '自动') return { kind: 'model', model: 'auto' }
   if (value === 'pro' || value === 'deepseek-v4-pro') {
     return { kind: 'model', model: 'deepseek-v4-pro' }
   }

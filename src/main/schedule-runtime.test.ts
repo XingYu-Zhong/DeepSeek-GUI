@@ -27,7 +27,7 @@ function makeTask(patch: Partial<ScheduledTaskV1> = {}): ScheduledTaskV1 {
     enabled: true,
     prompt: 'Run the task',
     workspaceRoot: '/tmp/workspace',
-    model: 'auto',
+    model: 'deepseek-v4-pro',
     reasoningEffort: 'medium',
     mode: 'agent',
     createdAt: '2026-06-02T00:00:00.000Z',
@@ -203,11 +203,11 @@ describe('ScheduleRuntime', () => {
     expect(JSON.parse(String(createRequest))).toMatchObject({
       title: '[Scheduled task] Task',
       workspace: '/tmp/workspace',
-      model: 'auto',
+      model: 'deepseek-v4-pro',
       mode: 'agent'
     })
     expect(JSON.parse(String(turnRequest))).toMatchObject({
-      model: 'auto',
+      model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
       // Headless turn: a user_input request would hang until timeout.
       disableUserInput: true
@@ -270,7 +270,7 @@ describe('ScheduleRuntime', () => {
       prompt: 'hello',
       title: 'demo',
       workspaceRoot: '/tmp/workspace',
-      model: 'auto',
+      model: 'deepseek-v4-pro',
       reasoningEffort: 'medium',
       mode: 'agent',
       waitForResult: true,
@@ -358,7 +358,7 @@ describe('ScheduleRuntime', () => {
       prompt: 'hello',
       title: 'demo',
       workspaceRoot: '/tmp/workspace',
-      model: 'auto',
+      model: 'deepseek-v4-pro',
       reasoningEffort: 'medium',
       mode: 'agent',
       waitForResult: true,
@@ -425,7 +425,7 @@ describe('ScheduleRuntime', () => {
       prompt: 'hello',
       title: 'demo',
       workspaceRoot: '/tmp/workspace',
-      model: 'auto',
+      model: 'deepseek-v4-pro',
       reasoningEffort: 'medium',
       mode: 'agent',
       waitForResult: true,

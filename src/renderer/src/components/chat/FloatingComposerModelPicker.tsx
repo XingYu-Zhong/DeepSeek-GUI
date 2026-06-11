@@ -11,7 +11,7 @@ import { Brain, Check, ChevronDown, ChevronRight, Gauge } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ModelProviderModelGroup } from '@shared/ds-gui-api'
 
-export type ComposerReasoningEffort = 'low' | 'medium' | 'high' | 'max'
+export type ComposerReasoningEffort = 'off' | 'high' | 'max'
 
 type Props = {
   compact: boolean
@@ -27,8 +27,7 @@ type Props = {
 }
 
 const REASONING_OPTIONS: Array<{ id: ComposerReasoningEffort; labelKey: string }> = [
-  { id: 'low', labelKey: 'composerReasoningLow' },
-  { id: 'medium', labelKey: 'composerReasoningMedium' },
+  { id: 'off', labelKey: 'composerReasoningOff' },
   { id: 'high', labelKey: 'composerReasoningHigh' },
   { id: 'max', labelKey: 'composerReasoningMax' }
 ]
@@ -93,10 +92,10 @@ export function FloatingComposerModelPicker({
     const ordered = new Set<string>()
     for (const id of composerPickList) {
       const normalized = id.trim()
-      if (normalized) ordered.add(normalized)
+      if (normalized && normalized.toLowerCase() !== 'auto') ordered.add(normalized)
     }
     const current = composerModel.trim()
-    if (current) ordered.add(current)
+    if (current && current.toLowerCase() !== 'auto') ordered.add(current)
     return [...ordered]
   }, [composerModel, composerPickList])
   const providerMenuGroups = useMemo<ComposerModelMenuGroup[]>(() => {
@@ -117,7 +116,7 @@ export function FloatingComposerModelPicker({
         }
       })
       .filter((group) => group.modelIds.length > 0)
-    const ungrouped = modelOptions.filter((id) => id !== 'auto' && !seen.has(id))
+    const ungrouped = modelOptions.filter((id) => !seen.has(id))
     if (ungrouped.length > 0) {
       groups.push({
         providerId: UNGROUPED_MODEL_PROVIDER_ID,
@@ -130,9 +129,11 @@ export function FloatingComposerModelPicker({
   const reasoningEnabled = Boolean(onComposerReasoningEffortChange)
   const currentReasoning = normalizeComposerReasoningEffort(composerReasoningEffort)
   const currentReasoningLabel = t(reasoningLabelKey(currentReasoning))
-  const modelLabel = fullModelLabel(composerModel, t('autoLabel'))
+  const displayModel = concreteModelId(composerModel)
+  const friendlyName = friendlyModelName(displayModel)
+  const modelLabel = fullModelLabel(displayModel)
   const controlsTitle = reasoningEnabled
-    ? `${modelLabel} / ${currentReasoningLabel}`
+    ? `${friendlyName ?? modelLabel} ${currentReasoningLabel}`
     : modelLabel
   const currentModel = composerModel.trim()
   const selectedProviderId = providerMenuGroups.find((group) =>
@@ -307,14 +308,6 @@ export function FloatingComposerModelPicker({
           {t('composerModel')}
         </MenuSectionTitle>
         <div className="pr-0.5">
-          <PickerRow
-            selected={!composerModel.trim() || composerModel.trim() === 'auto'}
-            title={t('autoLabel')}
-            onClick={() => {
-              onComposerModelChange('auto')
-              setMenuOpen(false)
-            }}
-          />
           {providerMenuGroups.map((group) => {
             const selectedModel = group.modelIds.includes(currentModel) ? currentModel : ''
             return (
@@ -392,14 +385,27 @@ export function FloatingComposerModelPicker({
               : 'cursor-not-allowed text-ds-faint'
           }`}
         >
-          <span className="min-w-0 truncate text-right">
-            {modelLabel}
-          </span>
-          {reasoningEnabled ? (
-            <span className="shrink-0 text-[12px] font-semibold text-ds-faint">
-              {currentReasoningLabel}
-            </span>
-          ) : null}
+          {friendlyName && reasoningEnabled ? (
+            <>
+              <span className="min-w-0 truncate text-right text-[14px] font-semibold text-ds-ink">
+                {friendlyName}
+              </span>
+              <span className="shrink-0 text-[14px] text-ds-faint">
+                {currentReasoningLabel}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="min-w-0 truncate text-right">
+                {modelLabel}
+              </span>
+              {reasoningEnabled ? (
+                <span className="shrink-0 text-[12px] font-semibold text-ds-faint">
+                  {currentReasoningLabel}
+                </span>
+              ) : null}
+            </>
+          )}
           <span className="mr-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ds-faint">
             <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} />
           </span>
@@ -432,12 +438,23 @@ export function FloatingComposerModelPicker({
         aria-label={t('composerModelControls')}
         title={t('composerModelControls')}
       >
-        <span className="min-w-0 whitespace-nowrap">{modelLabel}</span>
-        {reasoningEnabled ? (
-          <span className="shrink-0 text-ds-faint">
-            {t(reasoningLabelKey(currentReasoning))}
-          </span>
-        ) : null}
+        {friendlyName && reasoningEnabled ? (
+          <>
+            <span className="min-w-0 whitespace-nowrap text-[15px] font-bold text-ds-ink">{friendlyName}</span>
+            <span className="shrink-0 text-[15px] text-ds-faint">
+              {t(reasoningLabelKey(currentReasoning))}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="min-w-0 whitespace-nowrap">{modelLabel}</span>
+            {reasoningEnabled ? (
+              <span className="shrink-0 text-ds-faint">
+                {t(reasoningLabelKey(currentReasoning))}
+              </span>
+            ) : null}
+          </>
+        )}
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ds-faint" strokeWidth={1.8} />
       </button>
 
@@ -450,11 +467,11 @@ export function FloatingComposerModelPicker({
 
 export function normalizeComposerReasoningEffort(value: string | undefined): ComposerReasoningEffort {
   switch (value?.trim().toLowerCase()) {
+    case 'off':
     case 'low':
-    case 'medium':
     case 'high':
     case 'max':
-      return value.trim().toLowerCase() as ComposerReasoningEffort
+      return value.trim().toLowerCase() === 'low' ? 'off' : value.trim().toLowerCase() as ComposerReasoningEffort
     default:
       return 'max'
   }
@@ -463,7 +480,7 @@ export function normalizeComposerReasoningEffort(value: string | undefined): Com
 export function composerReasoningEffortRequestValue(
   value: ComposerReasoningEffort
 ): string | undefined {
-  if (value === 'low') return 'off'
+  if (value === 'off') return 'off'
   return value
 }
 
@@ -590,10 +607,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-function fullModelLabel(model: string, autoLabel: string): string {
+function friendlyModelName(model: string): string | null {
+  switch (model.trim().toLowerCase()) {
+    case 'deepseek-v4-pro':
+      return 'V4 Pro'
+    case 'deepseek-v4-flash':
+      return 'V4 Flash'
+    default:
+      return null
+  }
+}
+
+function concreteModelId(model: string): string {
   const trimmed = model.trim()
-  if (!trimmed || trimmed.toLowerCase() === 'auto') return autoLabel
-  return trimmed
+  return trimmed && trimmed.toLowerCase() !== 'auto' ? trimmed : 'deepseek-v4-pro'
+}
+
+function fullModelLabel(model: string): string {
+  return model.trim() || 'deepseek-v4-pro'
 }
 
 function estimatedModelSubmenuHeight(modelCount: number): number {

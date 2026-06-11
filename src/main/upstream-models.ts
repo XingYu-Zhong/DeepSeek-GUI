@@ -243,10 +243,9 @@ function sortComposerModelIds(ids: readonly string[]): string[] {
   const ordered = new Set<string>()
   for (const id of ids) {
     const trimmed = id.trim()
-    if (trimmed) ordered.add(trimmed)
+    if (trimmed && trimmed.toLowerCase() !== 'auto') ordered.add(trimmed)
   }
-  const tail = [...ordered].filter((id) => id !== 'auto').sort((a, b) => a.localeCompare(b))
-  return ordered.has('auto') ? ['auto', ...tail] : tail
+  return [...ordered].sort((a, b) => a.localeCompare(b))
 }
 
 function expandHome(path: string): string {

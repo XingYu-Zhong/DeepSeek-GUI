@@ -1,6 +1,7 @@
 import type { ChatBlock, NormalizedThread } from '../agent/types'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '@shared/default-composer-models'
 import {
+  DEFAULT_CLAW_MODEL,
   CLAW_MANAGED_INSTRUCTIONS_HEADING,
   CLAW_MODEL_IDS,
   type ClawImAgentProfileV1,
@@ -98,17 +99,16 @@ export function forgetCodeWorkspaceRoot(
 
 export function mergeComposerPickList(upstreamOk: boolean, upstreamIds: string[]): string[] {
   const ordered = new Set<string>()
-  ordered.add('auto')
   for (const id of DEFAULT_COMPOSER_MODEL_IDS) {
-    if (id !== 'auto') ordered.add(id)
+    ordered.add(id)
   }
   if (upstreamOk) {
     for (const id of upstreamIds) {
-      if (id.trim()) ordered.add(id.trim())
+      const trimmed = id.trim()
+      if (trimmed && trimmed.toLowerCase() !== 'auto') ordered.add(trimmed)
     }
   }
-  const tail = [...ordered].filter((id) => id !== 'auto').sort((a, b) => a.localeCompare(b))
-  return ['auto', ...tail]
+  return [...ordered].sort((a, b) => a.localeCompare(b))
 }
 
 export function newClawChannel(
@@ -125,7 +125,7 @@ export function newClawChannel(
     provider,
     label: profileName,
     enabled: true,
-    model: 'auto',
+    model: DEFAULT_CLAW_MODEL,
     threadId: '',
     workspaceRoot: '',
     conversations: [],
@@ -145,7 +145,7 @@ export function newClawChannel(
 
 export function normalizeClawComposerModel(raw: string): string {
   const trimmed = raw.trim()
-  return trimmed || 'auto'
+  return trimmed && trimmed.toLowerCase() !== 'auto' ? trimmed : DEFAULT_CLAW_MODEL
 }
 
 export function activeClawChannel(
@@ -187,14 +187,23 @@ export function isClawThread(
   return clawThreadTitleLooksManaged(thread.title) || clawThreadIdsFromChannels(channels).has(thread.id)
 }
 
+const FRIENDLY_MODEL_NAMES: Record<string, string> = {
+  'deepseek-v4-pro': 'V4 Pro',
+  'deepseek-v4-flash': 'V4 Flash'
+}
+
+function friendlyModelName(model: string): string {
+  return FRIENDLY_MODEL_NAMES[model.trim().toLowerCase()] ?? model
+}
+
 export function optimisticUserModelLabel(
   composerModel: string,
   threadModel: string | undefined
 ): string | undefined {
   const composer = composerModel.trim()
-  if (composer) return composer.toLowerCase() === 'auto' ? 'auto' : composer
+  if (composer) return friendlyModelName(composer)
   const model = threadModel?.trim()
-  return model || undefined
+  return model ? friendlyModelName(model) : undefined
 }
 
 export function rememberTurnModel(threadId: string, itemId: string, model: string): void {
