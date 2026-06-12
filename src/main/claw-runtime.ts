@@ -56,13 +56,17 @@ import {
   shouldDirectSendExistingGeneratedFilesForPrompt,
   shouldSendGeneratedFilesForPrompt,
   sleep,
+  subscribeRuntimeThreadEvents,
   webhookUrl,
   writeJson,
   type ClawRuntimeDeps,
   type RunPromptOptions,
+  type SseSubscriber,
   type ThreadDetailJson,
   type ThreadRecordJson
 } from './claw-runtime-helpers'
+import { getRuntimeBaseUrlForSettings, runtimeAuthHeaders } from './runtime/kun-adapter'
+import { FeishuStreamer } from './feishu-streamer'
 
 const MAX_FEISHU_FILE_UPLOAD_BYTES = 50 * 1024 * 1024
 const CLAW_IM_APPROVAL_POLICY = 'auto'
@@ -376,6 +380,115 @@ export class ClawRuntime {
       text: result.text,
       message: result.text || 'Completed',
       files: result.files
+    }
+  }
+
+  private async subscribeSse(
+    settings: AppSettingsV1,
+    threadId: string,
+    streamer: FeishuStreamer,
+    signal: AbortSignal
+  ): Promise<{ close: () => void }> {
+    const baseUrl = getRuntimeBaseUrlForSettings(settings)
+    if (!baseUrl) throw new Error('runtime_base_url_unavailable')
+    const headers: Record<string, string> = { Accept: 'text/event-stream' }
+    const auth = runtimeAuthHeaders(settings).get('Authorization')
+    if (auth) headers.Authorization = auth
+    const onEvent = (event: { kind?: string; [k: string]: unknown }): void => {
+      streamer.onSseEvent(event as Record<string, unknown>)
+    }
+    return subscribeRuntimeThreadEvents({
+      baseUrl,
+      threadId,
+      headers,
+      onEvent,
+      signal,
+      logError: (category, message, detail) => this.deps.logError(category, message, detail)
+    })
+  }
+
+  private subscribeSseForStreamer(
+    settings: AppSettingsV1,
+    threadId: string,
+    streamer: FeishuStreamer
+  ): SseSubscriber {
+    return (signal) => {
+      // `subscribeRuntimeThreadEvents` is async, but the SseSubscriber
+      // contract is synchronous (returns a `{ close }` handle). Kick off
+      // the async subscription and surface its `close` synchronously by
+      // racing the setup; if the setup itself throws (e.g. no base URL)
+      // we re-throw synchronously to match the existing test contract.
+      const setup = this.subscribeSse(settings, threadId, streamer, signal)
+      let close = (): void => undefined
+      void setup.then(
+        (handle) => { close = handle.close },
+        (error) => {
+          this.deps.logError('claw-feishu-stream', 'SSE subscription setup failed', {
+            message: error instanceof Error ? error.message : String(error),
+            threadId
+          })
+        }
+      )
+      return { close: () => close() }
+    }
+  }
+
+  private async runStreamingReply(input: {
+    bridge: LarkChannel
+    chatId: string
+    threadId: string
+    turnId: string
+    replyOptions: { replyTo?: string; replyInThread?: boolean }
+    responseTimeoutMs: number
+    context: Record<string, unknown>
+  }): Promise<{ ok: boolean; messageId: string; finalText: string; fellBack: boolean; message: string }> {
+    const cancel = new AbortController()
+    const timeout = setTimeout(() => cancel.abort(), input.responseTimeoutMs)
+    const streamer = new FeishuStreamer({
+      bridge: input.bridge,
+      chatId: input.chatId,
+      turnId: input.turnId,
+      threadId: input.threadId,
+      replyOptions: input.replyOptions,
+      logger: (category, message, detail) => this.deps.logError(category, message, detail)
+    })
+    try {
+      const settings = await this.deps.store.load()
+      const result = await streamer.start({
+        subscribe: this.subscribeSseForStreamer(settings, input.threadId, streamer)
+      })
+      return {
+        ok: result.ok,
+        messageId: result.messageId,
+        finalText: result.finalText,
+        fellBack: result.fellBack,
+        message: result.ok ? 'streamed' : 'stream_failed'
+      }
+    } catch (error) {
+      this.deps.logError('claw-feishu-stream', 'Streaming reply failed; falling back to one-shot send.', {
+        message: error instanceof Error ? error.message : String(error),
+        ...input.context
+      })
+      const finalText = streamer.getAccumulatedText() || ''
+      try {
+        const fb = await input.bridge.send(
+          input.chatId,
+          { markdown: finalText || 'Sorry, I could not finish streaming the response.' },
+          input.replyOptions
+        )
+        return { ok: true, messageId: fb.messageId, finalText, fellBack: true, message: 'fell_back' }
+      } catch (fbError) {
+        return {
+          ok: false,
+          messageId: '',
+          finalText,
+          fellBack: true,
+          message: fbError instanceof Error ? fbError.message : String(fbError)
+        }
+      }
+    } finally {
+      clearTimeout(timeout)
+      streamer.dispose()
     }
   }
 
