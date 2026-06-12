@@ -480,3 +480,88 @@ export async function readRequestBody(req: IncomingMessage): Promise<string> {
   }
   return Buffer.concat(chunks).toString('utf8')
 }
+
+export type SseSubscriber = (signal: AbortSignal) => { close: () => void }
+
+export type RuntimeSseEvent = { kind: string; turnId?: string; item?: { delta?: unknown }; [key: string]: unknown }
+
+/**
+ * Subscribe to `/v1/threads/{threadId}/events` and dispatch each
+ * `RuntimeSseEvent` to `onEvent`. Reconnects with exponential backoff
+ * (750ms → 5s) on network failure; does NOT reconnect on 4xx/5xx with
+ * a 4xx status (those are returned to the caller via the close path).
+ *
+ * The returned `close()` aborts the in-flight fetch and prevents further
+ * reconnects.
+ */
+export async function subscribeRuntimeThreadEvents(input: {
+  baseUrl: string
+  threadId: string
+  headers: Record<string, string>
+  onEvent: (event: RuntimeSseEvent) => void
+  signal: AbortSignal
+  logError?: (category: string, message: string, detail?: unknown) => void
+}): Promise<{ close: () => void }> {
+  const { baseUrl, threadId, headers, onEvent, signal, logError } = input
+  const ac = new AbortController()
+  const onAbort = (): void => ac.abort()
+  signal.addEventListener('abort', onAbort, { once: true })
+  let nextSinceSeq = 0
+  let closed = false
+  let reconnectDelayMs = 750
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    ac.abort()
+    signal.removeEventListener('abort', onAbort)
+  }
+  void (async () => {
+    while (!closed && !ac.signal.aborted) {
+      const url = new URL(`${baseUrl.replace(/\/+$/, '')}/v1/threads/${encodeURIComponent(threadId)}/events`)
+      url.searchParams.set('since_seq', String(nextSinceSeq))
+      try {
+        const res = await fetch(url, { signal: ac.signal, headers: { ...headers, Accept: 'text/event-stream' } })
+        if (!res.ok || !res.body) {
+          if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+            logError?.('sse', `SSE connection refused (${res.status}) for thread ${threadId}`, { status: res.status })
+            return
+          }
+          await new Promise<void>((r) => setTimeout(r, reconnectDelayMs))
+          reconnectDelayMs = Math.min(reconnectDelayMs * 2, 5_000)
+          continue
+        }
+        reconnectDelayMs = 750
+        const reader = res.body.getReader()
+        const dec = new TextDecoder()
+        let buffer = ''
+        while (!closed && !ac.signal.aborted) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += dec.decode(value, { stream: true })
+          let split: number
+          while ((split = buffer.indexOf('\n\n')) !== -1) {
+            const block = buffer.slice(0, split)
+            buffer = buffer.slice(split + 2)
+            const dataLine = block.split('\n').find((l) => l.startsWith('data:'))
+            if (!dataLine) continue
+            const json = dataLine.slice(5).trimStart()
+            try {
+              const parsed = JSON.parse(json) as { seq?: number } & RuntimeSseEvent
+              if (typeof parsed.seq === 'number') nextSinceSeq = Math.max(nextSinceSeq, parsed.seq)
+              onEvent(parsed)
+            } catch {
+              /* malformed SSE data line — ignore */
+            }
+          }
+        }
+      } catch (error) {
+        if (closed || ac.signal.aborted) return
+        const message = error instanceof Error ? error.message : String(error)
+        logError?.('sse', `SSE stream error for thread ${threadId}`, { message })
+        await new Promise<void>((r) => setTimeout(r, reconnectDelayMs))
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, 5_000)
+      }
+    }
+  })()
+  return { close }
+}

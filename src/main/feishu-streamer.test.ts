@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LarkChannel, MarkdownStreamController, NormalizedMessage, SendOptions, SendResult } from '@larksuiteoapi/node-sdk'
 import { FeishuStreamer } from './feishu-streamer'
+import type { SseSubscriber } from './claw-runtime-helpers'
 
 type StreamInput = { markdown: (controller: MarkdownStreamController) => Promise<void> }
 
