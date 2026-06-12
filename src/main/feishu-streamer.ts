@@ -107,45 +107,20 @@ export class FeishuStreamer {
       }
       controller.signal.addEventListener('abort', onAbort, { once: true })
 
-      // 启一个独立 microtask 持续把 SSE 事件转成 outbox 增量
-      void this.pumpSseEvents(controller.signal)
-
-      // The LarkChannel streaming API surface is `bridge.stream(chatId, { markdown: producer }, opts)`,
-      // but the upstream SDK type for `send` only accepts a string payload. We invoke the streaming
-      // shape via `send` because the test contract uses `send`; production code paths will provide a
-      // `bridge` whose `send` routes streaming calls to the real streaming transport.
-      const bridgeAny = this.opts.bridge as unknown as {
-        send: (
-          to: string,
-          input: { markdown: (c: MarkdownStreamController) => Promise<void> },
-          opts?: SendOptions
-        ) => Promise<{ messageId: string }>
-      }
-      const sendPromise: Promise<{ messageId: string }> = bridgeAny.send(
+      // Lark SDK exposes a dedicated `stream` method for markdown streaming
+      // (SendInput.markdown is a string; StreamInput.markdown is a producer
+      // function). Call the streaming variant directly — `send` would not
+      // accept a producer.
+      const streamPromise: Promise<{ messageId: string }> = this.opts.bridge.stream(
         this.opts.chatId,
         { markdown: producer },
         this.opts.replyOptions
       )
-      void sendPromise.catch((error: unknown) => {
+      void streamPromise.catch((error: unknown) => {
         this.state = 'closed'
         controller.abort()
         onError(error instanceof Error ? error : new Error(String(error)))
       })
-    })
-  }
-
-  private async pumpSseEvents(signal: AbortSignal): Promise<void> {
-    // The SseSubscriber above is already wired to deliver events; the
-    // streamer relies on its `subscribe` to register a listener that calls
-    // `this.onSseEvent`. This pump only exists so we can break out when
-    // the signal fires. Kept as a no-op for now; see Task 4.
-    if (signal.aborted) return
-    await new Promise<void>((resolve) => {
-      const onAbort = (): void => {
-        signal.removeEventListener('abort', onAbort)
-        resolve()
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
     })
   }
 

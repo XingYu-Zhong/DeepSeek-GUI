@@ -373,11 +373,8 @@ export class FeishuStreamer {
       }
       controller.signal.addEventListener('abort', onAbort, { once: true })
 
-      // 启一个独立 microtask 持续把 SSE 事件转成 outbox 增量
-      void this.pumpSseEvents(controller.signal)
-
       this.opts.bridge
-        .send(
+        .stream(
           this.opts.chatId,
           { markdown: producer },
           this.opts.replyOptions
@@ -387,21 +384,6 @@ export class FeishuStreamer {
           controller.abort()
           onError(error instanceof Error ? error : new Error(String(error)))
         })
-    })
-  }
-
-  private async pumpSseEvents(signal: AbortSignal): Promise<void> {
-    // The SseSubscriber above is already wired to deliver events; the
-    // streamer relies on its `subscribe` to register a listener that calls
-    // `this.onSseEvent`. This pump only exists so we can break out when
-    // the signal fires. Kept as a no-op for now; see Task 4.
-    if (signal.aborted) return
-    await new Promise<void>((resolve) => {
-      const onAbort = (): void => {
-        signal.removeEventListener('abort', onAbort)
-        resolve()
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
     })
   }
 
@@ -448,7 +430,7 @@ export class FeishuStreamer {
     })
   }
 
-  accumulatedText(): string {
+  getAccumulatedText(): string {
     return this.accumulatedText
   }
 
@@ -502,7 +484,7 @@ it('drops assistant_reasoning_delta without calling controller.append', async ()
   streamer.onSseEvent({ kind: 'turn_completed', turnId: 'turn_1' })
   // No start() called — assert the state machine doesn't blow up
   expect(controller.append).not.toHaveBeenCalled()
-  expect(streamer.accumulatedText()).toBe('')
+  expect(streamer.getAccumulatedText()).toBe('')
 })
 ```
 
@@ -811,7 +793,7 @@ private async runStreamingReply(input: {
       message: error instanceof Error ? error.message : String(error),
       ...input.context
     })
-    const finalText = streamer.accumulatedText() || ''
+    const finalText = streamer.getAccumulatedText() || ''
     try {
       const fb = await input.bridge.send(
         input.chatId,

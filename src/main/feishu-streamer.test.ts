@@ -18,7 +18,7 @@ function makeBridge(): {
     get messageId() { return messageId }
   }
   const bridge = {
-    send: vi.fn(async (_to: string, input: StreamInput, _opts: SendOptions): Promise<SendResult> => {
+    stream: vi.fn(async (_to: string, input: StreamInput, _opts: SendOptions): Promise<SendResult> => {
       calls.push({ args: [_to, input, _opts] })
       await input.markdown(controller)
       return { messageId }
