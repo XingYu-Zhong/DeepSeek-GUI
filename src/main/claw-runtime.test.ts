@@ -15,6 +15,35 @@ import {
 } from '../shared/app-settings'
 import { createClawRuntime } from './claw-runtime'
 
+// `subscribeRuntimeThreadEvents` opens a real SSE fetch against a runtime
+// base URL. In tests the runtime is mocked at the `runtimeRequest` layer,
+// so the SSE consumer is a stub. The streaming routing tests in this file
+// rely on the stub to push a synthetic `turn_completed` event so the
+// FeishuStreamer exits the producer loop and the test can assert on
+// `bridge.stream` having been called. Other tests don't subscribe to SSE,
+// so replacing this one export has no observable effect on them.
+vi.mock('./claw-runtime-helpers', async () => {
+  const actual = await vi.importActual<typeof import('./claw-runtime-helpers')>('./claw-runtime-helpers')
+  return {
+    ...actual,
+    subscribeRuntimeThreadEvents: vi.fn(async (input: { onEvent: (event: { kind: string; turnId: string; seq: number; timestamp: string; threadId: string }) => void }) => {
+      // Push a turn_completed event on the next microtask so the streamer
+      // resolves cleanly without ever calling bridge.stream controller APIs
+      // (no deltas were sent, so the accumulated text stays empty).
+      queueMicrotask(() => {
+        input.onEvent({
+          kind: 'turn_completed',
+          turnId: 'turn_stream',
+          seq: 1,
+          timestamp: new Date().toISOString(),
+          threadId: 'thr_stream'
+        })
+      })
+      return { close: () => undefined }
+    })
+  }
+})
+
 function buildSettings(): AppSettingsV1 {
   return {
     version: 1,
@@ -1944,37 +1973,186 @@ describe('ClawRuntime', () => {
 })
 
 describe('ClawRuntime Feishu routing', () => {
-  it('processes Feishu inbound through non-streaming path when feishuStream=false', async () => {
+  function makeFakeLarkChannel(): {
+    bridge: {
+      botIdentity: { openId: string }
+      on: ReturnType<typeof vi.fn>
+      connect: ReturnType<typeof vi.fn>
+      disconnect: ReturnType<typeof vi.fn>
+      send: ReturnType<typeof vi.fn>
+      stream: ReturnType<typeof vi.fn>
+      addReaction: ReturnType<typeof vi.fn>
+    }
+    sent: Array<{ to: string; input: unknown }>
+    streamed: Array<{ to: string; input: unknown }>
+  } {
+    const sent: Array<{ to: string; input: unknown }> = []
+    const streamed: Array<{ to: string; input: unknown }> = []
+    const bridge = {
+      botIdentity: { openId: 'bot_open_id' },
+      on: vi.fn(),
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      send: vi.fn(async (to: string, input: unknown) => {
+        sent.push({ to, input })
+        return { messageId: 'om_fake_send' }
+      }),
+      // The real Lark SDK stream method calls `input.markdown(controller)`
+      // synchronously after returning a card and resolves once the producer
+      // returns. We mirror that here: push the call onto `streamed`, then
+      // invoke the producer with a minimal MarkdownStreamController so the
+      // FeishuStreamer can drive its `nextDelta` loop. The synthetic SSE
+      // turn_completed event (from the subscribeRuntimeThreadEvents stub at
+      // the top of this file) closes the loop, the producer calls
+      // setContent and resolves, and we return a message id.
+      stream: vi.fn(async (to: string, input: { markdown: (controller: {
+        append: (chunk: string) => Promise<void>
+        setContent: (text: string) => Promise<void>
+        readonly messageId: string
+      }) => Promise<void> }, _opts?: unknown) => {
+        streamed.push({ to, input })
+        const messageId = 'om_fake_stream'
+        const controller = {
+          append: async (_chunk: string) => undefined,
+          setContent: async (_text: string) => undefined,
+          get messageId() { return messageId }
+        }
+        await input.markdown(controller)
+        return { messageId }
+      }),
+      addReaction: vi.fn(async () => undefined)
+    }
+    return { bridge, sent, streamed }
+  }
+
+  it('routes feishuStream=false inbound through bridge.send (non-streaming path)', async () => {
     const settings = buildSettings()
     settings.claw.im.feishuStream = false
+    const channel = buildChannel({ id: 'ch_route_off', provider: 'feishu' as const, enabled: true, threadId: '' })
+    settings.claw.channels = [channel]
     const { store } = mutableSettingsStore(settings)
     const runtimeRequest = vi.fn(async (_s: AppSettingsV1, path: string, init: { method?: string }) => {
       if (path === '/v1/threads' && init.method === 'POST') {
-        return { ok: true, status: 200, body: JSON.stringify({ id: 'thr_route', status: 'open' }) }
+        return { ok: true, status: 200, body: JSON.stringify({ id: 'thr_off', status: 'open' }) }
       }
-      if (path === '/v1/threads/thr_route' && init.method === 'PATCH') {
+      if (path === '/v1/threads/thr_off' && init.method === 'PATCH') {
         return { ok: true, status: 200, body: '{}' }
       }
-      if (path.startsWith('/v1/threads/thr_route') && path.endsWith('/turns') && init.method === 'POST') {
-        return { ok: true, status: 200, body: JSON.stringify({ turnId: 'turn_route' }) }
+      if (path.startsWith('/v1/threads/thr_off') && path.endsWith('/turns') && init.method === 'POST') {
+        return { ok: true, status: 200, body: JSON.stringify({ turnId: 'turn_off' }) }
       }
-      if (path === '/v1/threads/thr_route' && init.method === 'GET') {
-        return { ok: true, status: 200, body: JSON.stringify({ thread: { id: 'thr_route' }, turns: [{ id: 'turn_route', status: 'completed', items: [{ kind: 'assistant_text', turnId: 'turn_route', text: 'done' }] }] }) }
+      if (path === '/v1/threads/thr_off' && init.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          body: JSON.stringify({
+            thread: { id: 'thr_off' },
+            turns: [{
+              id: 'turn_off',
+              status: 'completed',
+              items: [{ kind: 'assistant_text', turnId: 'turn_off', text: 'done' }]
+            }]
+          })
+        }
       }
       return { ok: true, status: 200, body: '{}' }
     })
-    const { createClawRuntime } = await import('./claw-runtime')
-    const runtime = createClawRuntime({ store, runtimeRequest, logError: vi.fn() })
-    expect(runtime).toBeDefined()
+    const runtime = createClawRuntime({ store: store as never, runtimeRequest, logError: vi.fn() })
+    const { bridge, sent, streamed } = makeFakeLarkChannel()
+    ;(runtime as unknown as {
+      feishuChannels: Map<string, typeof bridge>
+    }).feishuChannels.set('ch_route_off', bridge)
+
+    await (runtime as unknown as {
+      handleFeishuMessage: (channelId: string, message: {
+        chatId: string
+        messageId: string
+        threadId?: string
+        senderId: string
+        senderName?: string
+        chatType: 'p2p' | 'group'
+        mentionedBot: boolean
+        mentionAll: boolean
+        content: string
+        rawContentType: string
+        mentions: unknown[]
+      }) => Promise<void>
+    }).handleFeishuMessage('ch_route_off', {
+      chatId: 'oc_chat_route',
+      messageId: 'om_route_1',
+      senderId: 'ou_user_route',
+      senderName: 'Routed',
+      chatType: 'p2p',
+      mentionedBot: false,
+      mentionAll: false,
+      content: 'hello',
+      rawContentType: 'text',
+      mentions: []
+    })
+
+    // Non-streaming path: handleFeishuMessage calls bridge.send for the
+    // agent reply and never asks the bridge to stream.
+    expect(sent.length).toBeGreaterThan(0)
+    expect(streamed.length).toBe(0)
   })
 
-  it('processes WeChat inbound without invoking streamer', async () => {
+  it('routes feishuStream=true inbound through bridge.stream (streaming path)', async () => {
     const settings = buildSettings()
     settings.claw.im.feishuStream = true
+    const channel = buildChannel({ id: 'ch_route_on', provider: 'feishu' as const, enabled: true, threadId: '' })
+    settings.claw.channels = [channel]
     const { store } = mutableSettingsStore(settings)
-    const runtimeRequest = vi.fn(async () => ({ ok: true, status: 200, body: '{}' }))
-    const { createClawRuntime } = await import('./claw-runtime')
-    const runtime = createClawRuntime({ store, runtimeRequest, logError: vi.fn() })
-    expect(runtime).toBeDefined()
+    const runtimeRequest = vi.fn(async (_s: AppSettingsV1, path: string, init: { method?: string }) => {
+      if (path === '/v1/threads' && init.method === 'POST') {
+        return { ok: true, status: 200, body: JSON.stringify({ id: 'thr_stream', status: 'open' }) }
+      }
+      if (path === '/v1/threads/thr_stream' && init.method === 'PATCH') {
+        return { ok: true, status: 200, body: '{}' }
+      }
+      if (path.startsWith('/v1/threads/thr_stream') && path.endsWith('/turns') && init.method === 'POST') {
+        return { ok: true, status: 200, body: JSON.stringify({ turnId: 'turn_stream' }) }
+      }
+      return { ok: true, status: 200, body: '{}' }
+    })
+    const runtime = createClawRuntime({ store: store as never, runtimeRequest, logError: vi.fn() })
+    const { bridge, streamed } = makeFakeLarkChannel()
+    ;(runtime as unknown as {
+      feishuChannels: Map<string, typeof bridge>
+    }).feishuChannels.set('ch_route_on', bridge)
+
+    await (runtime as unknown as {
+      handleFeishuMessage: (channelId: string, message: {
+        chatId: string
+        messageId: string
+        threadId?: string
+        senderId: string
+        senderName?: string
+        chatType: 'p2p' | 'group'
+        mentionedBot: boolean
+        mentionAll: boolean
+        content: string
+        rawContentType: string
+        mentions: unknown[]
+      }) => Promise<void>
+    }).handleFeishuMessage('ch_route_on', {
+      chatId: 'oc_chat_stream',
+      messageId: 'om_stream_1',
+      senderId: 'ou_user_stream',
+      senderName: 'Streamed',
+      chatType: 'p2p',
+      mentionedBot: false,
+      mentionAll: false,
+      content: 'stream please',
+      rawContentType: 'text',
+      mentions: []
+    })
+
+    // Streaming path: handleFeishuMessage calls bridge.stream. The runtime
+    // may also fall back to bridge.send when the streamed final text is
+    // empty (the "no markdown to resend" guard only skips the resend when
+    // result.text is non-empty), so the routing assertion is strictly on
+    // bridge.stream having been called — the presence of bridge.send here
+    // is incidental to the routing decision under test.
+    expect(streamed.length).toBe(1)
   })
 })
