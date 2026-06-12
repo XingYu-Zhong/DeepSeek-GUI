@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronDown, ChevronRight, Copy, FileEdit, ImageIcon, Loader2, MessageSquareQuote, PencilLine, Terminal, Wrench } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, FileEdit, ImageIcon, Loader2, MessageSquareQuote, PencilLine, Terminal, Wrench, X } from 'lucide-react'
 import type { AttachmentReference, ChatBlock, RuntimeDisclosureMetadata, ToolBlock, UserInputAnswer, UserInputQuestion } from '../../agent/types'
 import { extractUnifiedDiffText } from '../../lib/diff-stats'
 import { useChatStore } from '../../store/chat-store'
@@ -335,6 +336,21 @@ function UserAttachmentPreviews({
     }
   }, [activeThreadId, missingPreviewKey, workspaceRoot])
 
+  const previewableAttachments = useMemo(
+    () =>
+      attachments
+        .map((attachment) => ({
+          id: attachment.id,
+          title: attachment.name || attachment.id,
+          previewUrl: attachment.previewUrl ?? resolvedPreviewUrls[attachment.id]
+        }))
+        .filter((entry): entry is { id: string; title: string; previewUrl: string } =>
+          typeof entry.previewUrl === 'string' && entry.previewUrl.length > 0
+        ),
+    [attachments, resolvedPreviewUrls]
+  )
+  const [lightboxId, setLightboxId] = useState<string | null>(null)
+
   if (attachments.length === 0) return null
 
   return (
@@ -343,29 +359,146 @@ function UserAttachmentPreviews({
         {attachments.map((attachment) => {
           const previewUrl = attachment.previewUrl ?? resolvedPreviewUrls[attachment.id]
           const title = attachment.name || attachment.id
-          return (
+          return previewUrl ? (
+            <button
+              key={attachment.id}
+              type="button"
+              onClick={() => setLightboxId(attachment.id)}
+              className="block h-28 w-36 cursor-zoom-in overflow-hidden rounded-[14px] border border-ds-border-muted bg-ds-card shadow-sm transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-accent/40"
+              title={title}
+            >
+              <img
+                src={previewUrl}
+                alt={title}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            </button>
+          ) : (
             <span
               key={attachment.id}
               className="block h-28 w-36 overflow-hidden rounded-[14px] border border-ds-border-muted bg-ds-card shadow-sm"
               title={title}
             >
-              {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt={title}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-ds-faint">
-                  <ImageIcon className="h-7 w-7" strokeWidth={1.6} />
-                </span>
-              )}
+              <span className="flex h-full w-full items-center justify-center text-ds-faint">
+                <ImageIcon className="h-7 w-7" strokeWidth={1.6} />
+              </span>
             </span>
           )
         })}
       </div>
+      {lightboxId ? (
+        <AttachmentLightbox
+          attachments={previewableAttachments}
+          activeId={lightboxId}
+          onNavigate={setLightboxId}
+          onClose={() => setLightboxId(null)}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function AttachmentLightbox({
+  attachments,
+  activeId,
+  onNavigate,
+  onClose
+}: {
+  attachments: Array<{ id: string; title: string; previewUrl: string }>
+  activeId: string
+  onNavigate: (id: string) => void
+  onClose: () => void
+}): ReactElement | null {
+  const { t } = useTranslation('common')
+  const activeIndex = attachments.findIndex((entry) => entry.id === activeId)
+  const active = activeIndex >= 0 ? attachments[activeIndex] : null
+  const hasMultiple = attachments.length > 1
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      } else if (hasMultiple && event.key === 'ArrowLeft') {
+        event.preventDefault()
+        const prev = attachments[(activeIndex - 1 + attachments.length) % attachments.length]
+        if (prev) onNavigate(prev.id)
+      } else if (hasMultiple && event.key === 'ArrowRight') {
+        event.preventDefault()
+        const next = attachments[(activeIndex + 1) % attachments.length]
+        if (next) onNavigate(next.id)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeIndex, attachments, hasMultiple, onClose, onNavigate])
+
+  if (!active) return null
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={active.title}
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        title={t('attachmentPreviewClose')}
+        aria-label={t('attachmentPreviewClose')}
+        className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition hover:bg-white/20"
+      >
+        <X className="h-5 w-5" strokeWidth={2} />
+      </button>
+      {hasMultiple ? (
+        <>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              const prev = attachments[(activeIndex - 1 + attachments.length) % attachments.length]
+              if (prev) onNavigate(prev.id)
+            }}
+            title={t('attachmentPreviewPrev')}
+            aria-label={t('attachmentPreviewPrev')}
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white transition hover:bg-white/20"
+          >
+            <ChevronLeft className="h-6 w-6" strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              const next = attachments[(activeIndex + 1) % attachments.length]
+              if (next) onNavigate(next.id)
+            }}
+            title={t('attachmentPreviewNext')}
+            aria-label={t('attachmentPreviewNext')}
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white transition hover:bg-white/20"
+          >
+            <ChevronRight className="h-6 w-6" strokeWidth={2} />
+          </button>
+        </>
+      ) : null}
+      <figure
+        className="flex max-h-full max-w-full flex-col items-center gap-3"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <img
+          src={active.previewUrl}
+          alt={active.title}
+          className="max-h-[82vh] max-w-[90vw] rounded-[12px] object-contain shadow-2xl"
+        />
+        <figcaption className="max-w-[80vw] truncate text-center text-[13px] text-white/80">
+          {active.title}
+          {hasMultiple ? ` · ${activeIndex + 1}/${attachments.length}` : ''}
+        </figcaption>
+      </figure>
+    </div>,
+    document.body
   )
 }
 
