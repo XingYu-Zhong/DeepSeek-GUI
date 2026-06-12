@@ -413,13 +413,20 @@ export class ClawRuntime {
     streamer: FeishuStreamer
   ): SseSubscriber {
     return (signal) => {
+      if (signal.aborted) {
+        // Caller already aborted; don't kick off the async setup (it would
+        // attach an abort listener to an already-aborted signal and proceed
+        // to fetch anyway, leaking the connection).
+        return { close: () => undefined }
+      }
       // `subscribeRuntimeThreadEvents` is async, but the SseSubscriber
       // contract is synchronous (returns a `{ close }` handle). Kick off
       // the async subscription and surface its `close` synchronously by
-      // racing the setup; if the setup itself throws (e.g. no base URL)
-      // we re-throw synchronously to match the existing test contract.
+      // racing the setup; on setup rejection we abort the streamer so the
+      // producer breaks out of `await nextDelta()` and the fallback path
+      // can run instead of hanging forever.
       const setup = this.subscribeSse(settings, threadId, streamer, signal)
-      let close = (): void => undefined
+      let close: () => void = () => undefined
       void setup.then(
         (handle) => { close = handle.close },
         (error) => {
@@ -427,6 +434,9 @@ export class ClawRuntime {
             message: error instanceof Error ? error.message : String(error),
             threadId
           })
+          // Wake the streamer so the runStreamingReply fallback path can run
+          // instead of hanging in await nextDelta() forever.
+          streamer.abort()
         }
       )
       return { close: () => close() }
