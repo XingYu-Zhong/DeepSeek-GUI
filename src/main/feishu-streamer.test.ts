@@ -3,6 +3,22 @@ import type { LarkChannel, MarkdownStreamController, NormalizedMessage, SendOpti
 import { FeishuStreamer } from './feishu-streamer'
 import type { SseSubscriber } from './claw-runtime-helpers'
 
+/**
+ * Real Kun RuntimeEvent shape (see `kun/src/loop/agent-loop.ts:794-806`):
+ *   { kind: 'assistant_text_delta', turnId, itemId, item: { ..., text: <delta>, status } }
+ * The streamer's onSseEvent reads `item.text`. The previous test fixtures used
+ * the invented `item.delta` field, which masked a production bug where
+ * deltas never reached the SDK controller and the card stayed empty.
+ */
+
+/**
+ * Real Kun RuntimeEvent shape (see ):
+ *   { kind: 'assistant_text_delta', turnId, itemId, item: { ..., text: <delta>, status } }
+ * The streamer's onSseEvent reads . The previous test fixtures used
+ * the invented  field, which masked a production bug where
+ * deltas never reached the SDK controller and the card stayed empty.
+ */
+
 type StreamInput = { markdown: (controller: MarkdownStreamController) => Promise<void> }
 
 function makeBridge(): {
@@ -62,9 +78,9 @@ describe('FeishuStreamer', () => {
     })
     const sub = makeSubscriber(
       [
-        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { delta: '你' } },
-        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { delta: '好' } },
-        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { delta: '!' } },
+        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { text: '你' } },
+        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { text: '好' } },
+        { kind: 'assistant_text_delta', turnId: 'turn_1', item: { text: '!' } },
         { kind: 'turn_completed', turnId: 'turn_1' }
       ],
       (event) => streamer.onSseEvent(event)
@@ -87,7 +103,7 @@ describe('FeishuStreamer', () => {
       bridge, chatId: 'oc_chat_1', turnId: 'turn_1', threadId: 'thr_1',
       replyOptions: {}, logger: vi.fn()
     })
-    streamer.onSseEvent({ kind: 'assistant_reasoning_delta', turnId: 'turn_1', item: { delta: 'thinking...' } })
+    streamer.onSseEvent({ kind: 'assistant_reasoning_delta', turnId: 'turn_1', item: { text: 'thinking...' } })
     streamer.onSseEvent({ kind: 'turn_completed', turnId: 'turn_1' })
     // No start() called — assert the state machine doesn't blow up
     expect(controller.append).not.toHaveBeenCalled()
@@ -102,7 +118,7 @@ describe('FeishuStreamer', () => {
     })
     const sub = makeSubscriber(
       [
-        { kind: 'assistant_text_delta', turnId: 'turn_OTHER', item: { delta: 'X' } },
+        { kind: 'assistant_text_delta', turnId: 'turn_OTHER', item: { text: 'X' } },
         { kind: 'turn_completed', turnId: 'turn_1' }
       ],
       (event) => streamer.onSseEvent(event)
@@ -130,7 +146,7 @@ describe('FeishuStreamer', () => {
       replyOptions: {}, logger: vi.fn()
     })
     const sub = makeSubscriber(
-      [{ kind: 'assistant_text_delta', turnId: 'turn_1', item: { delta: 'partial' } }],
+      [{ kind: 'assistant_text_delta', turnId: 'turn_1', item: { text: 'partial' } }],
       (event) => streamer.onSseEvent(event)
     )
     const result = await streamer.start({ subscribe: sub.subscribe })

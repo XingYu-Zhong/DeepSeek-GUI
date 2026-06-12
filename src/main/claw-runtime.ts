@@ -1396,8 +1396,9 @@ export class ClawRuntime {
     }
 
     let result: ClawRunResult
+    // Hoisted out of the try so the no-double-send guard (below) can see it.
+    const shouldStream = settings.claw.im.feishuStream !== false
     try {
-      const shouldStream = settings.claw.im.feishuStream !== false
       if (shouldStream) {
         const initialThreadId = conversation?.localThreadId.trim() || channel?.threadId.trim() || ''
         const runResult = await this.runPrompt(settings, {
@@ -1487,12 +1488,19 @@ export class ClawRuntime {
             responseTimeoutMs: settings.claw.im.responseTimeoutMs,
             context: { channelId, chatId: message.chatId, inboundMessageId: message.messageId, threadId: runResult.threadId, turnId: runResult.turnId }
           })
+          // Streaming branch: the SDK already created a streaming card (or
+          // runStreamingReply's catch path sent a one-shot fallback). Either
+          // way, we MUST NOT resend below. Propagate the finalText as both
+          // `text` and `message` so the no-double-send guard can use either,
+          // and so any human-readable context (errors, "Sorry" messages)
+          // doesn't surface the 'streamed' / 'stream_failed' / 'fell_back'
+          // status sentinels returned by runStreamingReply.
           result = {
             ok: stream.ok,
             threadId: runResult.threadId,
             turnId: runResult.turnId,
             text: stream.finalText,
-            message: stream.message,
+            message: stream.finalText,
             files: []
           }
         } else {
@@ -1544,15 +1552,21 @@ export class ClawRuntime {
         })
       : []
     const replyText = result.ok
-      ? replyTextForGeneratedFiles(result.text?.trim() || result.message?.trim() || 'Completed.', filesToSend)
+      ? replyTextForGeneratedFiles(result.text?.trim() || 'Completed.', filesToSend)
       : (result.message.trim() || 'Sorry, something went wrong while handling your message.')
     const resultThreadId = result.ok ? result.threadId : undefined
     const resultTurnId = result.ok ? result.turnId : undefined
-    // When streaming succeeded, the markdown already went out via FeishuStreamer;
-    // do NOT resend it. Only resend when the path fell back to a non-streaming
-    // one-shot (where replyText is still unseen by the user).
-    if (settings.claw.im.feishuStream !== false && result.ok && (result.text?.length ?? 0) > 0) {
-      // streamed — no markdown to resend
+    // When the streaming branch was used, the SDK already created a streaming
+    // card (and runStreamingReply's catch path may have sent a one-shot
+    // fallback). Either way, do NOT resend. Use shouldStream (the route taken)
+    // rather than result.text.length — text is empty in normal cases where
+    // the agent only emits reasoning or tool calls. The previous check
+    // `result.text.length > 0` was the bug that produced the "(no content)
+    // streamed" double-bubble: every stream had empty text, so the guard
+    // always fell through and we sent the 'streamed' status sentinel as a
+    // second message.
+    if (shouldStream && result.ok) {
+      // streaming card (or one-shot fallback) already in chat -- do not resend
     } else {
       try {
         await this.sendFeishuMessage(

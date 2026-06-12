@@ -129,8 +129,13 @@ export class FeishuStreamer {
     if (this.state !== 'streaming') return
     const kind = event.kind
     if (kind === 'assistant_text_delta' && event.turnId === this.opts.turnId) {
-      const item = (event as { item?: { delta?: unknown } }).item
-      const delta = typeof item?.delta === 'string' ? item.delta : ''
+      // Kun emits the delta text in `item.text` (per `agent-loop.ts:794-806`),
+      // not `item.delta`. Reading the wrong field is what produced the
+      // "(no content) streamed" double-bubble bug -- the SDK card stayed empty,
+      // got patched to "(no content)" on terminal, and our fallback path then
+      // sent a second message containing the 'streamed' status sentinel.
+      const item = (event as { item?: { text?: unknown } }).item
+      const delta = typeof item?.text === 'string' ? item.text : ''
       if (delta) this.push(delta)
       return
     }
