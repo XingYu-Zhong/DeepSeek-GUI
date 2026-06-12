@@ -35,6 +35,12 @@ function buildSettings(): AppSettingsV1 {
     claw: {
       ...defaultClawSettings(),
       enabled: true,
+      // Legacy tests in this file were written for the polling / one-shot
+      // `processIncomingImPrompt` flow. The new streaming path is on by
+      // default, but for these tests we explicitly opt into the polling
+      // path so they continue to exercise the behavior they assert against.
+      // New routing tests (Task 8) cover the streaming-on branch.
+      im: { ...defaultClawSettings().im, feishuStream: false },
       tasks: [
         {
           id: 'task_1',

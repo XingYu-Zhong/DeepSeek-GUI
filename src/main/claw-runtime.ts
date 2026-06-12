@@ -383,6 +383,105 @@ export class ClawRuntime {
     }
   }
 
+  private async startRuntimeTurnAndReturn(
+    settings: AppSettingsV1,
+    input: {
+      prompt: string
+      sender: string
+      title: string
+      workspaceRoot: string
+      source: 'task' | 'im'
+      channel?: ClawImChannelV1
+      conversation?: ClawImConversationV1
+      remoteSession?: Pick<ClawImRemoteSessionV1, 'chatId' | 'messageId' | 'threadId' | 'senderId' | 'senderName'>
+    }
+  ): Promise<{ ok: boolean; status: number; body: string; threadId?: string; turnId?: string; message: string }> {
+    void input.sender
+    const existingThreadId = input.conversation?.localThreadId.trim() || input.channel?.threadId.trim() || ''
+    const model = normalizeTaskModel(input.channel?.model ?? '') ?? (settings.agents.kun.model.trim() || DEFAULT_CLAW_MODEL)
+    const createThread = async (): Promise<ThreadRecordJson | null> => {
+      const body: Record<string, unknown> = {
+        workspace: input.workspaceRoot,
+        model,
+        mode: settings.claw.im.mode
+      }
+      if (input.source === 'im') {
+        body.approvalPolicy = CLAW_IM_APPROVAL_POLICY
+        body.sandboxMode = CLAW_IM_SANDBOX_MODE
+      }
+      const create = await this.deps.runtimeRequest(settings, '/v1/threads', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      })
+      if (!create.ok) return null
+      return JSON.parse(create.body) as ThreadRecordJson
+    }
+    let thread: ThreadRecordJson | null = existingThreadId ? { id: existingThreadId } : await createThread()
+    if (!thread) return { ok: false, status: 500, body: '', message: 'Failed to create thread.' }
+    if (!existingThreadId && input.title.trim()) {
+      void this.deps.runtimeRequest(settings, `/v1/threads/${encodeURIComponent(thread.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: input.title.trim() })
+      })
+    }
+    const displayText = parseClawUserPromptForDisplay(input.prompt).text
+    const turnBody: Record<string, unknown> = {
+      prompt: input.prompt,
+      mode: settings.claw.im.mode
+    }
+    if (displayText && displayText !== input.prompt) turnBody.displayText = displayText
+    if (model) turnBody.model = model
+    if (input.source === 'im') {
+      turnBody.disableUserInput = true
+      turnBody.approvalPolicy = CLAW_IM_APPROVAL_POLICY
+      turnBody.sandboxMode = CLAW_IM_SANDBOX_MODE
+    }
+    const turn = await this.startRuntimeTurn(settings, thread.id, turnBody)
+    if (!turn.ok && existingThreadId && isMissingThreadResult(turn)) {
+      thread = await createThread()
+      if (!thread) return { ok: false, status: 500, body: '', message: 'Failed to create thread.' }
+      const retry = await this.startRuntimeTurn(settings, thread.id, turnBody)
+      if (!retry.ok) return { ok: false, status: retry.status, body: retry.body, message: runtimeErrorMessage(retry, 'Failed to start turn.') }
+      const retryParsed = parseJsonObject(retry.body)
+      const retryTurnId = asString(retryParsed?.turnId) || asString(nestedRecord(retryParsed?.turn).id)
+      if (!retryTurnId) return { ok: false, status: retry.status, body: retry.body, message: 'Failed to start turn: missing turn id.' }
+      if (input.channel && input.remoteSession) {
+        await this.persistStreamingConversationMapping(settings, input.channel, input.conversation, input.remoteSession, thread.id)
+      }
+      return { ok: true, status: retry.status, body: retry.body, threadId: thread.id, turnId: retryTurnId, message: 'started' }
+    }
+    if (!turn.ok) return { ok: false, status: turn.status, body: turn.body, message: runtimeErrorMessage(turn, 'Failed to start turn.') }
+    const parsed = parseJsonObject(turn.body)
+    const turnId = asString(parsed?.turnId) || asString(nestedRecord(parsed?.turn).id)
+    if (!turnId) return { ok: false, status: turn.status, body: turn.body, message: 'Failed to start turn: missing turn id.' }
+    if (input.channel && input.remoteSession) {
+      await this.persistStreamingConversationMapping(settings, input.channel, input.conversation, input.remoteSession, thread.id)
+    }
+    return { ok: true, status: turn.status, body: turn.body, threadId: thread.id, turnId, message: 'started' }
+  }
+
+  private async persistStreamingConversationMapping(
+    settings: AppSettingsV1,
+    channel: ClawImChannelV1,
+    conversation: ClawImConversationV1 | undefined,
+    remoteSession: Pick<ClawImRemoteSessionV1, 'chatId' | 'messageId' | 'threadId' | 'senderId' | 'senderName'>,
+    threadId: string
+  ): Promise<void> {
+    const now = new Date().toISOString()
+    const latestSettings = await this.deps.store.load()
+    const existingConversation = conversation ?? this.findChannelConversation(channel, remoteSession)
+    const nextConversation: ClawImConversationV1 = existingConversation
+      ? { ...existingConversation, latestMessageId: remoteSession.messageId, senderId: remoteSession.senderId, senderName: remoteSession.senderName, localThreadId: threadId, updatedAt: now }
+      : { id: randomUUID(), chatId: remoteSession.chatId, remoteThreadId: remoteSession.threadId, latestMessageId: remoteSession.messageId, senderId: remoteSession.senderId, senderName: remoteSession.senderName, localThreadId: threadId, workspaceRoot: this.resolveConversationWorkspaceRoot(settings, channel, remoteSession), createdAt: now, updatedAt: now }
+    await this.deps.store.patch({
+      claw: {
+        channels: latestSettings.claw.channels.map((item) => item.id === channel.id
+          ? { ...item, threadId, conversations: existingConversation ? item.conversations.map((entry) => entry.id === existingConversation.id ? nextConversation : entry) : [...item.conversations, nextConversation], updatedAt: now }
+          : item)
+      }
+    })
+  }
+
   private async subscribeSse(
     settings: AppSettingsV1,
     threadId: string,
@@ -1397,14 +1496,47 @@ export class ClawRuntime {
 
     let result: ClawRunResult
     try {
-      result = await this.processIncomingImPrompt(settings, {
-        prompt: buildFeishuPrompt(message),
-        sender,
-        provider: 'feishu',
-        channel,
-        conversation,
-        remoteSession
-      })
+      const shouldStream = settings.claw.im.feishuStream !== false
+      if (shouldStream) {
+        const turnOnly = await this.startRuntimeTurnAndReturn(settings, {
+          channel, conversation, remoteSession,
+          prompt: buildFeishuPrompt(message),
+          sender,
+          title: channel ? `[Claw IM:${channel.label}] ${sender}` : `[Claw IM:feishu] ${sender}`,
+          workspaceRoot: this.resolveIncomingWorkspaceRoot(settings, channel, conversation, remoteSession),
+          source: 'im'
+        })
+        if (turnOnly.ok && turnOnly.threadId && turnOnly.turnId) {
+          const stream = await this.runStreamingReply({
+            bridge,
+            chatId: message.chatId,
+            threadId: turnOnly.threadId,
+            turnId: turnOnly.turnId,
+            replyOptions: { replyTo: message.messageId, replyInThread: Boolean(message.threadId) },
+            responseTimeoutMs: settings.claw.im.responseTimeoutMs,
+            context: { channelId, chatId: message.chatId, inboundMessageId: message.messageId, threadId: turnOnly.threadId, turnId: turnOnly.turnId }
+          })
+          result = {
+            ok: stream.ok,
+            threadId: turnOnly.threadId,
+            turnId: turnOnly.turnId,
+            text: stream.finalText,
+            message: stream.message,
+            files: []
+          }
+        } else {
+          result = { ok: false, message: turnOnly.message || 'Failed to start turn.' }
+        }
+      } else {
+        result = await this.processIncomingImPrompt(settings, {
+          prompt: buildFeishuPrompt(message),
+          sender,
+          provider: 'feishu',
+          channel,
+          conversation,
+          remoteSession
+        })
+      }
     } catch (error) {
       this.deps.logError('claw-feishu', 'Failed to handle Feishu inbound message', {
         message: errorMessage(error),
@@ -1445,30 +1577,37 @@ export class ClawRuntime {
       : (result.message.trim() || 'Sorry, something went wrong while handling your message.')
     const resultThreadId = result.ok ? result.threadId : undefined
     const resultTurnId = result.ok ? result.turnId : undefined
-    try {
-      await this.sendFeishuMessage(
-        bridge,
-        message.chatId,
-        { markdown: replyText },
-        replyOptions,
-        {
-          purpose: 'agent-reply',
-          channelId,
+    // When streaming succeeded, the markdown already went out via FeishuStreamer;
+    // do NOT resend it. Only resend when the path fell back to a non-streaming
+    // one-shot (where replyText is still unseen by the user).
+    if (settings.claw.im.feishuStream !== false && result.ok && (result.text?.length ?? 0) > 0) {
+      // streamed — no markdown to resend
+    } else {
+      try {
+        await this.sendFeishuMessage(
+          bridge,
+          message.chatId,
+          { markdown: replyText },
+          replyOptions,
+          {
+            purpose: result.ok ? 'agent-reply' : 'agent-reply-fallback',
+            channelId,
+            chatId: message.chatId,
+            inboundMessageId: message.messageId,
+            runtimeOk: result.ok,
+            threadId: resultThreadId,
+            turnId: resultTurnId
+          }
+        )
+      } catch (error) {
+        this.deps.logError('claw-feishu', 'Failed to send Feishu / Lark agent reply', {
+          message: errorMessage(error),
           chatId: message.chatId,
-          inboundMessageId: message.messageId,
-          runtimeOk: result.ok,
+          senderId: message.senderId,
           threadId: resultThreadId,
           turnId: resultTurnId
-        }
-      )
-    } catch (error) {
-      this.deps.logError('claw-feishu', 'Failed to send Feishu / Lark agent reply', {
-        message: errorMessage(error),
-        chatId: message.chatId,
-        senderId: message.senderId,
-        threadId: resultThreadId,
-        turnId: resultTurnId
-      })
+        })
+      }
     }
     if (filesToSend.length > 0) {
       const delivery = await this.sendFeishuGeneratedFiles(
