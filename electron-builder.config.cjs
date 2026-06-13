@@ -158,7 +158,10 @@ module.exports = {
   win: {
     // Windows does not mask app icons for us; use the rounded asset so
     // desktop/start-menu/taskbar shortcuts do not show a hard square edge.
-    icon: './src/asset/img/kun_mac.png',
+    // Ship a multi-size .ico (16/24/32/48/64/72/96/128/256) so Explorer and
+    // the desktop render crisp icons at small sizes (#222). Regenerate with:
+    // npx --yes png2icons src/asset/img/kun_mac.png build/icon -icowe -bc
+    icon: './build/icon.ico',
     target: [{ target: 'nsis', arch: ['x64'] }]
   },
   nsis: {
