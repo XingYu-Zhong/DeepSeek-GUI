@@ -1433,5 +1433,6 @@
   "planVerify": "Verify",
   "planVerifyRunning": "Verifying…",
   "sddChangedBanner": "Requirements {{ids}} changed after planning; the plan may be stale",
-  "sddReplanButton": "Replan affected steps"
+  "sddReplanButton": "Replan affected steps",
+  "sandboxBlockedHint": "This action is blocked by the current file-access mode. Switch to \u201cCan access all files\u201d in Settings to allow it."
 }

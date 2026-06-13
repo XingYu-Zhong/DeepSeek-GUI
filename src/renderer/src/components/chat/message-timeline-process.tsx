@@ -949,6 +949,7 @@ function ProcessEntryDetail({
   detail: ProcessDetail
   processing: boolean
 }): ReactElement | null {
+  const { t } = useTranslation('common')
   if (detail.kind === 'reasoning') {
     const streamReason = block.id === 'live-reasoning' && processing
     return (
@@ -972,12 +973,18 @@ function ProcessEntryDetail({
       return <DiffView patch={detail.text} filePath={detail.filePath} />
     }
     if (detail.isError) {
+      const isSandboxBlock = detail.text.includes('is blocked')
       return (
         <div className="overflow-hidden rounded-[10px] border border-red-200/80 bg-red-50/80 dark:border-red-800/40 dark:bg-red-500/10">
           {detail.filePath ? (
             <div className="border-b border-red-200/70 bg-red-100/50 px-3 py-1.5 font-mono text-[12px] text-red-700 dark:border-red-800/40 dark:bg-red-500/15 dark:text-red-300">
               {detail.filePath}
             </div>
+          ) : null}
+          {isSandboxBlock ? (
+            <p className="border-b border-red-200/70 bg-red-100/50 px-3 py-1.5 text-[12px] leading-5 text-red-700 dark:border-red-800/40 dark:bg-red-500/15 dark:text-red-300">
+              {t('sandboxBlockedHint')}
+            </p>
           ) : null}
           <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[12px] leading-6 text-red-800 dark:text-red-200">
             {detail.text}

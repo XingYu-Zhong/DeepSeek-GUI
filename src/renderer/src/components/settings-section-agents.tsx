@@ -583,7 +583,14 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
                   />
                   <SettingRow
                     title={t('sandboxMode')}
-                    description={t('sandboxModeDesc')}
+                    description={t(
+                      ({
+                        'workspace-write': 'sandboxWorkspaceWriteDesc',
+                        'read-only': 'sandboxReadOnlyDesc',
+                        'danger-full-access': 'sandboxFullAccessDesc',
+                        'external-sandbox': 'sandboxExternalDesc'
+                      } as Record<string, string>)[kun.sandboxMode as string] ?? 'sandboxModeDesc'
+                    )}
                     control={
                       <select
                         className={selectControlClass}

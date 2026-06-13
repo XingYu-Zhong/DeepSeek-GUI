@@ -1433,5 +1433,6 @@
   "planVerify": "验收",
   "planVerifyRunning": "验收中…",
   "sddChangedBanner": "需求 {{ids}} 在规划后发生变更，计划可能已过时",
-  "sddReplanButton": "增量重规划"
+  "sddReplanButton": "增量重规划",
+  "sandboxBlockedHint": "当前文件访问模式不允许此操作。请在「设置 → 文件访问范围」中切换为「可访问所有文件」。"
 }
