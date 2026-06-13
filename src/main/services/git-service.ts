@@ -34,7 +34,12 @@ async function runGit(
   const { stdout, stderr } = await execFileAsync('git', args, {
     cwd,
     timeout,
-    maxBuffer: 1024 * 1024
+    maxBuffer: 1024 * 1024,
+    // Force a C locale so git emits English diagnostics. gitFailure() matches
+    // messages like "not a git repository"; without this, a localized git
+    // (e.g. zh_CN: "不是 Git 仓库") falls through to a generic `error` reason
+    // and the UI shows the wrong state instead of "not a Git repository".
+    env: { ...process.env, LC_ALL: 'C', LANG: 'C' }
   })
   return { stdout: String(stdout), stderr: String(stderr) }
 }
