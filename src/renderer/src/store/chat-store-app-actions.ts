@@ -3,8 +3,12 @@ import type { AppSettingsV1 } from '@shared/app-settings'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import type { ChatState, ChatStoreGet, ChatStoreSet, InitialSetupMode, PluginHostRoute, SettingsRouteSection } from './chat-store-types'
 import {
+  composerModelAllowed,
   persistComposerProviderId,
   providerIdForComposerModel,
+  providerIdMatchesComposerModel,
+  readThreadComposerSelection,
+  rememberThreadComposerSelection,
   readStoredComposerProviderId
 } from './chat-store-helpers'
 
@@ -63,12 +67,17 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
     setError: (message) => set({ error: message }),
 
     setComposerModel: (modelId, providerId) => {
-      persistComposerModel(modelId)
       const nextProviderId = providerId?.trim() || providerIdForComposerModel(get().composerModelGroups, modelId)
-      persistComposerProviderId(nextProviderId)
+      const activeThreadId = get().activeThreadId
+      if (activeThreadId) {
+        rememberThreadComposerSelection(activeThreadId, modelId, nextProviderId)
+      } else {
+        persistComposerModel(modelId)
+        persistComposerProviderId(nextProviderId)
+      }
       set({ composerModel: modelId, composerProviderId: nextProviderId })
       const trimmed = modelId.trim()
-      if (trimmed && trimmed.toLowerCase() !== 'auto' && typeof window.kunGui !== 'undefined') {
+      if (!activeThreadId && trimmed && trimmed.toLowerCase() !== 'auto' && typeof window.kunGui !== 'undefined') {
         void window.kunGui.saveSettingsSilent({ agents: { kun: { model: trimmed } } })
       }
     },
@@ -80,26 +89,43 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
         const res = await window.kunGui.fetchUpstreamModels()
         const pick = mergeComposerPickList(res.ok, res.ok ? res.modelIds : [])
         const groups = res.ok ? res.modelGroups ?? [] : []
-        const allowed = new Set(pick)
         const runtimeDefault = res.ok ? res.defaultModelId?.trim() ?? '' : ''
         set((state) => {
+          const isAllowed = (model: string): boolean => composerModelAllowed(pick, model)
+          const activeThread = state.activeThreadId
+            ? state.threads.find((thread) => thread.id === state.activeThreadId) ?? null
+            : null
+          const threadSelection = activeThread ? readThreadComposerSelection(activeThread.id) : null
           const currentModel = state.composerModel.trim()
           const normalizedCurrentModel = currentModel.toLowerCase() === 'auto' ? '' : currentModel
           const storedModel = readStoredComposerModel(pick)
-          let model = normalizedCurrentModel
-          let shouldPersist = model !== state.composerModel
-          if (model === '' || !allowed.has(model)) {
-            model = storedModel
+          let model = activeThread
+            ? threadSelection?.model?.trim() || activeThread.model.trim()
+            : normalizedCurrentModel
+          let shouldPersist = !activeThread && model !== state.composerModel
+          if (model === '' || !isAllowed(model)) {
+            model = activeThread ? '' : storedModel
             shouldPersist = false
           }
-          if (model === '' || !allowed.has(model)) {
+          if (model === '' || !isAllowed(model)) {
             model = fallbackComposerModel(pick, runtimeDefault)
             shouldPersist = false
           }
           if (shouldPersist) persistComposerModel(model)
-          const storedProviderId = readStoredComposerProviderId(groups, model)
-          const providerId = storedProviderId || providerIdForComposerModel(groups, model)
-          if (providerId !== state.composerProviderId) persistComposerProviderId(providerId)
+          const threadProviderId =
+            threadSelection && providerIdMatchesComposerModel(groups, threadSelection.providerId, model)
+              ? threadSelection.providerId
+              : ''
+          const storedProviderId = activeThread ? '' : readStoredComposerProviderId(groups, model)
+          const providerId = threadProviderId || storedProviderId || providerIdForComposerModel(groups, model)
+          if (!activeThread && providerId !== state.composerProviderId) persistComposerProviderId(providerId)
+          if (
+            activeThread &&
+            (!threadSelection || threadSelection.model !== model || threadSelection.providerId !== providerId) &&
+            composerModelAllowed(pick, model)
+          ) {
+            rememberThreadComposerSelection(activeThread.id, model, providerId)
+          }
           return {
             composerPickList: pick,
             composerModel: model,

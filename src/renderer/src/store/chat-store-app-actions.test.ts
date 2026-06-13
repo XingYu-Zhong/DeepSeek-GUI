@@ -11,6 +11,7 @@ import { createAppActions } from './chat-store-app-actions'
 
 const COMPOSER_MODEL_STORAGE_KEY = 'kun.composerModel'
 const COMPOSER_PROVIDER_STORAGE_KEY = 'kun.composerProviderId'
+const THREAD_COMPOSER_SELECTION_STORAGE_KEY = 'kun.threadComposerSelection.v1'
 
 function createMemoryStorage(): Storage {
   const items = new Map<string, string>()
@@ -39,6 +40,8 @@ function buildHarness(fetchModelsResult: FetchModelsResult): {
   state: ChatState
 } {
   let state = {
+    activeThreadId: null,
+    threads: [],
     composerModel: '',
     composerProviderId: '',
     composerPickList: mergeComposerPickList(false, []),
@@ -136,6 +139,79 @@ describe('chat-store app actions composer model loading', () => {
     expect(window.kunGui.saveSettingsSilent).toHaveBeenCalledWith({
       agents: { kun: { model: 'MiniMax-M2' } }
     })
+  })
+
+  it('keeps active-thread model changes out of the global Kun default', () => {
+    const { actions, state } = buildHarness({
+      ok: true,
+      modelIds: ['MiniMax-M2'],
+      defaultModelId: 'deepseek-v4-pro',
+      modelGroups: [{
+        providerId: 'minimax',
+        label: 'MiniMax',
+        modelIds: ['MiniMax-M2']
+      }]
+    })
+    state.activeThreadId = 'thread-a'
+    state.threads = [{
+      id: 'thread-a',
+      title: 'Thread A',
+      workspace: '/tmp/project',
+      model: 'deepseek-v4-pro',
+      status: 'idle',
+      mode: 'agent',
+      updatedAt: '2026-06-01T00:00:00.000Z'
+    }]
+    state.composerModelGroups = [{
+      providerId: 'minimax',
+      label: 'MiniMax',
+      modelIds: ['MiniMax-M2']
+    }]
+
+    actions.setComposerModel('MiniMax-M2', 'minimax')
+
+    expect(state.composerModel).toBe('MiniMax-M2')
+    expect(state.composerProviderId).toBe('minimax')
+    expect(localStorage.getItem(COMPOSER_MODEL_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(COMPOSER_PROVIDER_STORAGE_KEY)).toBeNull()
+    expect(JSON.parse(localStorage.getItem(THREAD_COMPOSER_SELECTION_STORAGE_KEY) ?? '{}')).toEqual({
+      'thread-a': { model: 'MiniMax-M2', providerId: 'minimax' }
+    })
+    expect(window.kunGui.saveSettingsSilent).not.toHaveBeenCalled()
+  })
+
+  it('restores a model selection from the active thread instead of the global picker', async () => {
+    localStorage.setItem(COMPOSER_MODEL_STORAGE_KEY, 'deepseek-v4-flash')
+    localStorage.setItem(
+      THREAD_COMPOSER_SELECTION_STORAGE_KEY,
+      JSON.stringify({ 'thread-a': { model: 'MiniMax-M2', providerId: 'minimax' } })
+    )
+    const { actions, state } = buildHarness({
+      ok: true,
+      modelIds: ['MiniMax-M2'],
+      defaultModelId: 'deepseek-v4-pro',
+      modelGroups: [{
+        providerId: 'minimax',
+        label: 'MiniMax',
+        modelIds: ['MiniMax-M2']
+      }]
+    })
+    state.activeThreadId = 'thread-a'
+    state.threads = [{
+      id: 'thread-a',
+      title: 'Thread A',
+      workspace: '/tmp/project',
+      model: 'deepseek-v4-pro',
+      status: 'idle',
+      mode: 'agent',
+      updatedAt: '2026-06-01T00:00:00.000Z'
+    }]
+
+    await actions.loadComposerModels()
+
+    expect(state.composerModel).toBe('MiniMax-M2')
+    expect(state.composerProviderId).toBe('minimax')
+    expect(localStorage.getItem(COMPOSER_MODEL_STORAGE_KEY)).toBe('deepseek-v4-flash')
   })
 
   it('does not overwrite a stored custom model when only fallback models are available', async () => {

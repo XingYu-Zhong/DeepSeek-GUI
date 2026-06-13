@@ -21,10 +21,17 @@ import { readBrowserStorageItem, writeBrowserStorageItem } from '../lib/browser-
 
 const COMPOSER_MODEL_STORAGE_KEY = 'kun.composerModel'
 const COMPOSER_PROVIDER_STORAGE_KEY = 'kun.composerProviderId'
+const THREAD_COMPOSER_SELECTION_STORAGE_KEY = 'kun.threadComposerSelection.v1'
 const TURN_MODEL_STORAGE_KEY = 'kun.turnModelLabel'
 const CODE_WORKSPACE_ROOTS_STORAGE_KEY = 'kun.codeWorkspaceRoots.v1'
 export const MAX_CODE_WORKSPACE_ROOTS = 30
+export const MAX_THREAD_COMPOSER_SELECTIONS = 500
 export const MAX_TURN_MODEL_LABELS = 500
+
+export type ThreadComposerSelection = {
+  model: string
+  providerId: string
+}
 
 export const CLAW_COMPOSER_MODEL_IDS = [...CLAW_MODEL_IDS]
 
@@ -63,6 +70,44 @@ export function persistComposerProviderId(providerId: string): void {
   }
 }
 
+export function readThreadComposerSelection(threadId: string): ThreadComposerSelection | null {
+  const thread = threadId.trim()
+  if (!thread) return null
+  return loadThreadComposerSelectionMap()[thread] ?? null
+}
+
+export function rememberThreadComposerSelection(
+  threadId: string,
+  model: string,
+  providerId = ''
+): void {
+  const thread = threadId.trim()
+  const nextModel = model.trim()
+  if (!thread || !nextModel) return
+  const map = loadThreadComposerSelectionMap()
+  delete map[thread]
+  map[thread] = {
+    model: nextModel,
+    providerId: providerId.trim()
+  }
+  saveThreadComposerSelectionMap(map)
+}
+
+export function normalizeThreadComposerSelectionMap(raw: unknown): Record<string, ThreadComposerSelection> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const entries: Array<[string, ThreadComposerSelection]> = []
+  for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+    const key = rawKey.trim()
+    if (!key || !rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) continue
+    const value = rawValue as Record<string, unknown>
+    const model = typeof value.model === 'string' ? value.model.trim() : ''
+    const providerId = typeof value.providerId === 'string' ? value.providerId.trim() : ''
+    if (!model) continue
+    entries.push([key, { model, providerId }])
+  }
+  return Object.fromEntries(entries.slice(-MAX_THREAD_COMPOSER_SELECTIONS))
+}
+
 export function providerIdForComposerModel(
   modelGroups: readonly ModelProviderModelGroup[],
   modelId: string
@@ -76,6 +121,23 @@ function modelGroupHasModel(group: ModelProviderModelGroup, modelId: string): bo
   const normalized = normalizeComposerModelId(modelId)
   if (!normalized) return false
   return group.modelIds.some((id) => normalizeComposerModelId(id) === normalized)
+}
+
+export function composerModelAllowed(pickList: readonly string[], modelId: string): boolean {
+  const normalized = normalizeComposerModelId(modelId)
+  if (!normalized) return false
+  return pickList.some((id) => normalizeComposerModelId(id) === normalized)
+}
+
+export function providerIdMatchesComposerModel(
+  modelGroups: readonly ModelProviderModelGroup[],
+  providerId: string,
+  modelId: string
+): boolean {
+  const provider = providerId.trim()
+  if (!provider) return false
+  const group = modelGroups.find((item) => item.providerId === provider)
+  return group ? modelGroupHasModel(group, modelId) : false
 }
 
 function normalizeComposerModelId(modelId: string): string {
@@ -343,4 +405,21 @@ export function normalizeTurnModelMap(raw: unknown): Record<string, string> {
 
 function saveTurnModelMap(map: Record<string, string>): void {
   writeBrowserStorageItem(TURN_MODEL_STORAGE_KEY, JSON.stringify(normalizeTurnModelMap(map)))
+}
+
+function loadThreadComposerSelectionMap(): Record<string, ThreadComposerSelection> {
+  try {
+    const raw = readBrowserStorageItem(THREAD_COMPOSER_SELECTION_STORAGE_KEY)
+    if (!raw) return {}
+    return normalizeThreadComposerSelectionMap(JSON.parse(raw))
+  } catch {
+    return {}
+  }
+}
+
+function saveThreadComposerSelectionMap(map: Record<string, ThreadComposerSelection>): void {
+  writeBrowserStorageItem(
+    THREAD_COMPOSER_SELECTION_STORAGE_KEY,
+    JSON.stringify(normalizeThreadComposerSelectionMap(map))
+  )
 }

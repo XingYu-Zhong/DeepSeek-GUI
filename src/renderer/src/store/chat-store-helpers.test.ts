@@ -3,6 +3,7 @@ import type { ClawImChannelV1 } from '@shared/app-settings'
 import { CLAW_MANAGED_INSTRUCTIONS_HEADING } from '@shared/app-settings'
 import {
   MAX_TURN_MODEL_LABELS,
+  MAX_THREAD_COMPOSER_SELECTIONS,
   MAX_CODE_WORKSPACE_ROOTS,
   clawThreadIdsFromChannels,
   clawThreadTitleLooksManaged,
@@ -12,12 +13,16 @@ import {
   isClawThread,
   mergeComposerPickList,
   newClawChannel,
+  normalizeThreadComposerSelectionMap,
   normalizeTurnModelMap,
+  readThreadComposerSelection,
   reconcileCodeWorkspaceRoots,
+  rememberThreadComposerSelection,
   rememberTurnModel
 } from './chat-store-helpers'
 
 const TURN_MODEL_STORAGE_KEY = 'kun.turnModelLabel'
+const THREAD_COMPOSER_SELECTION_STORAGE_KEY = 'kun.threadComposerSelection.v1'
 
 function createMemoryStorage(): Storage {
   const items = new Map<string, string>()
@@ -246,5 +251,44 @@ describe('chat-store Claw helpers', () => {
       { kind: 'user', id: 'item-new', text: 'hello', modelLabel: 'deepseek-chat' },
       { kind: 'assistant', id: 'assistant-1', text: 'hi' }
     ])
+  })
+
+  it('normalizes and caps per-thread composer selections', () => {
+    const raw: Record<string, unknown> = {
+      'bad-empty-model': { model: '' },
+      'bad-number': 42
+    }
+    for (let index = 0; index < MAX_THREAD_COMPOSER_SELECTIONS + 5; index += 1) {
+      raw[`thread-${index}`] = {
+        model: ` model-${index} `,
+        providerId: ` provider-${index} `
+      }
+    }
+
+    const normalized = normalizeThreadComposerSelectionMap(raw)
+
+    expect(Object.keys(normalized)).toHaveLength(MAX_THREAD_COMPOSER_SELECTIONS)
+    expect(normalized['thread-0']).toBeUndefined()
+    expect(normalized['thread-5']).toEqual({ model: 'model-5', providerId: 'provider-5' })
+    expect(normalized['bad-empty-model']).toBeUndefined()
+    expect(normalized['bad-number']).toBeUndefined()
+  })
+
+  it('persists composer model selections independently per thread', () => {
+    rememberThreadComposerSelection(' thread-a ', ' deepseek-v4-pro ', ' deepseek ')
+    rememberThreadComposerSelection(' thread-b ', ' MiniMax-M2 ', ' minimax ')
+
+    expect(readThreadComposerSelection('thread-a')).toEqual({
+      model: 'deepseek-v4-pro',
+      providerId: 'deepseek'
+    })
+    expect(readThreadComposerSelection('thread-b')).toEqual({
+      model: 'MiniMax-M2',
+      providerId: 'minimax'
+    })
+    expect(JSON.parse(localStorage.getItem(THREAD_COMPOSER_SELECTION_STORAGE_KEY) ?? '{}')).toMatchObject({
+      'thread-a': { model: 'deepseek-v4-pro', providerId: 'deepseek' },
+      'thread-b': { model: 'MiniMax-M2', providerId: 'minimax' }
+    })
   })
 })

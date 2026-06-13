@@ -31,14 +31,18 @@ import {
 import type { ChatState, ChatStoreGet, ChatStoreSet } from './chat-store-types'
 import {
   activeClawChannel,
+  composerModelAllowed,
   compactCodeWorkspaceRoots,
   forgetCodeWorkspaceRoot,
   hydrateBlockModelLabels,
   isClawThread,
   optimisticUserModelLabel,
+  providerIdForComposerModel,
+  providerIdMatchesComposerModel,
   readCodeWorkspaceRoots,
-  readStoredComposerModel,
+  readThreadComposerSelection,
   rememberCodeWorkspaceRoots,
+  rememberThreadComposerSelection,
   rememberTurnModel
 } from './chat-store-helpers'
 import {
@@ -130,6 +134,31 @@ async function ensureRuntimeProviderForSend(input: {
   } catch (error) {
     input.set({ runtimeConnection: 'offline' })
     throw error
+  }
+}
+
+function composerSelectionForThread(
+  state: ChatState,
+  thread: Pick<NormalizedThread, 'id' | 'model'> | null | undefined
+): { model: string; providerId: string } | null {
+  if (!thread) return null
+  const pickList = state.composerPickList
+  const stored = readThreadComposerSelection(thread.id)
+  const storedModel = stored?.model.trim() ?? ''
+  const threadModel = thread.model.trim()
+  const model = composerModelAllowed(pickList, storedModel)
+    ? storedModel
+    : composerModelAllowed(pickList, threadModel)
+      ? threadModel
+      : ''
+  if (!model) return null
+  const storedProviderId =
+    stored && providerIdMatchesComposerModel(state.composerModelGroups, stored.providerId, model)
+      ? stored.providerId
+      : ''
+  return {
+    model,
+    providerId: storedProviderId || providerIdForComposerModel(state.composerModelGroups, model)
   }
 }
 
@@ -326,6 +355,8 @@ export function createThreadActions(
       const currentTurnUserId = busy
         ? latestUserMessageId ?? findLatestUserBlockId(blocks)
         : null
+      const threadSnap = get().threads.find((thread) => thread.id === id) ?? null
+      const composerSelection = composerSelectionForThread(get(), threadSnap)
       set({
         watchTurnCompletion: nextWatch,
         unreadThreadIds: nextUnread,
@@ -345,7 +376,13 @@ export function createThreadActions(
         turnReasoningFirstAtByUserId: {},
         turnReasoningLastAtByUserId: {},
         inspectorSelectedId: null,
-        queuedMessages: []
+        queuedMessages: [],
+        ...(composerSelection
+          ? {
+              composerModel: composerSelection.model,
+              composerProviderId: composerSelection.providerId
+            }
+          : {})
       })
       syncTurnCompletionPoll(set, get)
       const ac = new AbortController()
@@ -568,6 +605,9 @@ export function createThreadActions(
           throw new Error('Failed to resolve target thread id.')
         }
         activeThreadId = threadId
+        if (composerModel) {
+          rememberThreadComposerSelection(threadId, composerModel, composerProviderId)
+        }
         set((s) => ({
           activeThreadId: threadId,
           codeWorkspaceRoots: rememberCodeWorkspaceRoots(s.codeWorkspaceRoots, [workspaceRoot, createdThread?.workspace]),
@@ -609,6 +649,9 @@ export function createThreadActions(
     try {
       const seqAtSend = get().lastSeq
       const channel = get().route === 'claw' ? activeClawChannel(get()) : null
+      if (!channel && composerModel) {
+        rememberThreadComposerSelection(activeThreadId, composerModel, composerProviderId)
+      }
       await ensureRuntimeProviderForSend({
         providerId: channel ? undefined : composerProviderId,
         model: composerModel,
