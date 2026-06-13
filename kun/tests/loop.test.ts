@@ -261,6 +261,58 @@ describe('AgentLoop', () => {
     expect(turnItems.map((item) => item.kind)).toEqual(['user_message'])
   })
 
+  it('keeps partial assistant text when interrupting a foreground turn', async () => {
+    let resolveDelta: (() => void) | undefined
+    const sawDelta = new Promise<void>((resolve) => {
+      resolveDelta = resolve
+    })
+    const h = makeHarness({
+      provider: 'partial-abort',
+      model: 'partial-abort',
+      async *stream(request: ModelRequest): AsyncIterable<ModelStreamChunk> {
+        yield { kind: 'assistant_text_delta', text: 'partial answer' }
+        resolveDelta?.()
+        await new Promise<void>((resolve) => {
+          if (request.abortSignal.aborted) {
+            resolve()
+            return
+          }
+          request.abortSignal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        yield { kind: 'completed', stopReason: 'stop' }
+      }
+    })
+    await bootstrapThread(h)
+
+    const run = h.loop.runTurn(h.threadId, h.turnId)
+    await sawDelta
+    await h.turns.interruptTurn({ threadId: h.threadId, turnId: h.turnId })
+    const status = await run
+    const sessionItems = await h.sessionStore.loadItems(h.threadId)
+    const thread = await h.threadStore.get(h.threadId)
+    const turnItems = thread?.turns.find((turn) => turn.id === h.turnId)?.items ?? []
+
+    expect(status).toBe('aborted')
+    expect(sessionItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'assistant_text',
+          text: 'partial answer',
+          status: 'completed'
+        })
+      ])
+    )
+    expect(turnItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'assistant_text',
+          text: 'partial answer',
+          status: 'completed'
+        })
+      ])
+    )
+  })
+
   it('runs a tool call and surfaces its result item', async () => {
     let calls = 0
     const h = makeHarness({

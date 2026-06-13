@@ -995,6 +995,38 @@ export class AgentLoop {
     const completedToolCalls: ToolCallLike[] = []
     let stopReason: 'stop' | 'tool_calls' | 'length' | 'error' = 'stop'
     const modelClientDiagnostics = this.modelClientDiagnostics()
+    let persistedReasoning = false
+    let persistedText = false
+    const persistAccumulatedResponse = async (): Promise<void> => {
+      if (!persistedReasoning && reasoningAccumulator.value) {
+        persistedReasoning = true
+        const itemId = reasoningItemId || this.opts.ids.next('item_reasoning')
+        await this.opts.turns.applyItem(
+          threadId,
+          makeAssistantReasoningItem({
+            id: itemId,
+            turnId,
+            threadId,
+            text: reasoningAccumulator.value,
+            status: 'completed'
+          })
+        )
+      }
+      if (!persistedText && textAccumulator.value) {
+        persistedText = true
+        const itemId = textItemId || this.opts.ids.next('item_text')
+        await this.opts.turns.applyItem(
+          threadId,
+          makeAssistantTextItem({
+            id: itemId,
+            turnId,
+            threadId,
+            text: textAccumulator.value,
+            status: 'completed'
+          })
+        )
+      }
+    }
     await this.recordPipelineStage(threadId, turnId, 'pre_send', {
       model: request.model,
       ...modelClientDiagnostics,
@@ -1013,7 +1045,10 @@ export class AgentLoop {
       ...modelClientDiagnostics
     })
     for await (const chunk of this.opts.model.stream(request)) {
-      if (signal.aborted) return 'aborted'
+      if (signal.aborted) {
+        await persistAccumulatedResponse()
+        return 'aborted'
+      }
       switch (chunk.kind) {
         case 'assistant_text_delta':
           textItemId ||= this.opts.ids.next('item_text')
@@ -1128,36 +1163,15 @@ export class AgentLoop {
           break
       }
     }
+    if (signal.aborted) {
+      await persistAccumulatedResponse()
+      return 'aborted'
+    }
     await this.recordPipelineStage(threadId, turnId, 'response_received', {
       stopReason,
       toolCallCount: completedToolCalls.length
     })
-    if (reasoningAccumulator.value) {
-      const itemId = reasoningItemId || this.opts.ids.next('item_reasoning')
-      await this.opts.turns.applyItem(
-        threadId,
-        makeAssistantReasoningItem({
-          id: itemId,
-          turnId,
-          threadId,
-          text: reasoningAccumulator.value,
-          status: 'completed'
-        })
-      )
-    }
-    if (textAccumulator.value) {
-      const itemId = textItemId || this.opts.ids.next('item_text')
-      await this.opts.turns.applyItem(
-        threadId,
-        makeAssistantTextItem({
-          id: itemId,
-          turnId,
-          threadId,
-          text: textAccumulator.value,
-          status: 'completed'
-        })
-      )
-    }
+    await persistAccumulatedResponse()
     if (stopReason === 'error') return 'failed'
     if (completedToolCalls.length === 0) {
       if (request.requiredToolName) {
