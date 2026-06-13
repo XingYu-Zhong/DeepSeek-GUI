@@ -2,6 +2,11 @@ import type i18next from 'i18next'
 import type { AppSettingsV1 } from '@shared/app-settings'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import type { ChatState, ChatStoreGet, ChatStoreSet, InitialSetupMode, PluginHostRoute, SettingsRouteSection } from './chat-store-types'
+import {
+  persistComposerProviderId,
+  providerIdForComposerModel,
+  readStoredComposerProviderId
+} from './chat-store-helpers'
 
 type CreateAppActionsOptions = {
   set: ChatStoreSet
@@ -57,9 +62,11 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
   return {
     setError: (message) => set({ error: message }),
 
-    setComposerModel: (modelId) => {
+    setComposerModel: (modelId, providerId) => {
       persistComposerModel(modelId)
-      set({ composerModel: modelId })
+      const nextProviderId = providerId?.trim() || providerIdForComposerModel(get().composerModelGroups, modelId)
+      persistComposerProviderId(nextProviderId)
+      set({ composerModel: modelId, composerProviderId: nextProviderId })
       const trimmed = modelId.trim()
       if (trimmed && trimmed.toLowerCase() !== 'auto' && typeof window.kunGui !== 'undefined') {
         void window.kunGui.saveSettingsSilent({ agents: { kun: { model: trimmed } } })
@@ -90,7 +97,15 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
             shouldPersist = false
           }
           if (shouldPersist) persistComposerModel(model)
-          return { composerPickList: pick, composerModel: model, composerModelGroups: groups }
+          const storedProviderId = readStoredComposerProviderId(groups, model)
+          const providerId = storedProviderId || providerIdForComposerModel(groups, model)
+          if (providerId !== state.composerProviderId) persistComposerProviderId(providerId)
+          return {
+            composerPickList: pick,
+            composerModel: model,
+            composerProviderId: providerId,
+            composerModelGroups: groups
+          }
         })
       })().finally(() => {
         setComposerModelLoadPromise(null)

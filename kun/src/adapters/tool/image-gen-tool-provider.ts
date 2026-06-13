@@ -34,7 +34,7 @@ export class ImageGenHttpError extends Error {
     readonly status: number,
     readonly body: string
   ) {
-    super(`HTTP ${status}: ${body.slice(0, 500)}`)
+    super(`HTTP ${status}: ${body}`)
   }
 }
 
@@ -504,6 +504,7 @@ export class MiniMaxImageClient implements ImageGenClient {
       model: request.model,
       prompt: request.prompt,
       ...minimaxImageDimensionFields(request.model, request.size),
+      prompt_optimizer: true,
       response_format: 'base64',
       n: 1
     }, request)
@@ -518,6 +519,7 @@ export class MiniMaxImageClient implements ImageGenClient {
         type: 'character',
         image_file: `data:${image.mimeType};base64,${image.data.toString('base64')}`
       })),
+      prompt_optimizer: true,
       response_format: 'base64',
       n: 1
     }, request)

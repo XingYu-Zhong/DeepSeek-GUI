@@ -100,6 +100,10 @@ describe('sdd-thread-registry', () => {
       workspace: '/tmp/app/.kunsdd/draft/draft-1'
     }, registry)).toBe(true)
     expect(isSddAssistantThread({
+      id: 'thread-unit-layout',
+      title: '下一步: .kunsdd/requirements/123e4567-e89b-12d3-a456-426614174000/requirement.md'
+    }, registry)).toBe(true)
+    expect(isSddAssistantThread({
       id: 'thread-normal',
       title: '需求 AI',
       workspace: '/tmp/app'

@@ -34,10 +34,11 @@ type Props = {
   liveReasoning: string
   liveAssistant: string
   composerModel: string
+  composerProviderId?: string
   composerPickList: string[]
   composerModelGroups?: ModelProviderModelGroup[]
   composerReasoningEffort: ComposerReasoningEffort
-  setComposerModel: (modelId: string) => void
+  setComposerModel: (modelId: string, providerId?: string) => void
   setComposerReasoningEffort: (effort: ComposerReasoningEffort) => void
   queuedMessages: QueuedUserMessage[]
   removeQueuedMessage: (id: string) => void
@@ -52,6 +53,7 @@ type Props = {
   onInterrupt: (options?: { discard?: boolean }) => void
   onRetryConnection: () => void
   onOpenSettings: () => void
+  onConfigureProviders?: () => void
   onNewConversation: () => void
   onPickWorkspace: () => void
   onCollapse: () => void
@@ -70,6 +72,7 @@ export function WriteAssistantPanel({
   liveReasoning,
   liveAssistant,
   composerModel,
+  composerProviderId,
   composerPickList,
   composerModelGroups = [],
   composerReasoningEffort,
@@ -88,6 +91,7 @@ export function WriteAssistantPanel({
   onInterrupt,
   onRetryConnection,
   onOpenSettings,
+  onConfigureProviders,
   onNewConversation,
   onPickWorkspace,
   onCollapse,
@@ -301,6 +305,7 @@ export function WriteAssistantPanel({
           runtimeReady={runtimeConnection === 'ready'}
           hasActiveThread={Boolean(activeThreadId)}
           composerModel={composerModel}
+          composerProviderId={composerProviderId}
           composerPickList={composerPickList}
           composerModelGroups={composerModelGroups}
           composerReasoningEffort={composerReasoningEffort}
@@ -318,6 +323,7 @@ export function WriteAssistantPanel({
           onRemoveAttachment={onRemoveAttachment}
           onSend={onSend}
           onInterrupt={onInterrupt}
+          onConfigureProviders={onConfigureProviders}
         />
       </div>
     </aside>

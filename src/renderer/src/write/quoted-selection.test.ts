@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { harden } from 'rehype-harden'
+import { isExplicitWriteResourceUrl } from '@shared/write-markdown-resource'
 import {
   resolveWriteMarkdownResource,
   resolveWriteMarkdownResourcePath,
@@ -262,6 +263,19 @@ describe('write markdown preview resources', () => {
     expect(resolved).toBe('file:///tmp/workspace/assets/hero%20image.png')
     expect(resolveWriteMarkdownResourcePath('../assets/hero image.png', '/tmp/workspace/docs/draft.md')).toBe(
       '/tmp/workspace/assets/hero image.png'
+    )
+  })
+
+  it('resolves Windows local image paths without treating drive letters as URL protocols', () => {
+    expect(isExplicitWriteResourceUrl('C:\\Users\\me\\assets\\hero image.png')).toBe(false)
+    expect(resolveWriteMarkdownResource('..\\assets\\hero image.png', 'C:\\Users\\me\\docs\\draft.md')).toBe(
+      'file:///C:/Users/me/assets/hero%20image.png'
+    )
+    expect(resolveWriteMarkdownResourcePath('C:\\Users\\me\\assets\\hero image.png', 'C:\\Users\\me\\docs\\draft.md')).toBe(
+      'C:/Users/me/assets/hero image.png'
+    )
+    expect(writePathToFileUrl('\\\\server\\share\\hero image.png')).toBe(
+      'file://server/share/hero%20image.png'
     )
   })
 

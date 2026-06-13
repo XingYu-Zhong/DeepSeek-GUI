@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   AtSign,
@@ -10,8 +10,10 @@ import {
   Loader2,
   LogOut,
   Maximize2,
+  MessageSquare,
   Mic,
   MoreHorizontal,
+  Plus,
   PlusCircle,
   QrCode,
   RefreshCw,
@@ -630,6 +632,13 @@ export function ConnectPhoneSidebarPanel({
     ? ''
     : formatConnectPhoneUserCode(installQr.userCode, installQr.deviceCode)
   const installQrIsImage = installQr.url.startsWith('data:image/')
+  const sortedChannels = useMemo(
+    () => [...channels].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+    [channels]
+  )
+  const firstAvailableTarget = CONNECT_PHONE_TARGETS.find(
+    (item) => !hasClawPhoneChannel(channels, connectPhoneProviderForTarget(item))
+  ) ?? null
 
   const clearInstallTimers = (): void => {
     if (installPollTimerRef.current) {
@@ -859,13 +868,103 @@ export function ConnectPhoneSidebarPanel({
   }
 
   return (
-    <div className="ds-no-drag flex min-h-0 flex-1 flex-col px-2 pt-2">
-      <div className="px-1 pb-3">
-        <div className="flex items-center gap-2 text-[12px] font-normal text-[#9aa5b5] dark:text-white/35">
+    <div className="ds-no-drag flex min-h-0 flex-1 flex-col gap-3 px-2 pt-2">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-[#9aa5b5] dark:text-white/35">
+            {t('clawSidebarIm')}
+          </span>
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!firstAvailableTarget}
+              onClick={() => {
+                if (firstAvailableTarget) setTarget(firstAvailableTarget)
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-ds-faint transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={t('clawAddIm')}
+              title={t('clawAddIm')}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-ds-faint transition hover:bg-ds-hover hover:text-ds-ink"
+              aria-label={t('clawSettings')}
+              title={t('clawSettings')}
+            >
+              <Settings className="h-3.5 w-3.5" strokeWidth={1.9} />
+            </button>
+          </span>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-0.5 pb-2">
+          {sortedChannels.length === 0 ? (
+            <div className="mx-1 rounded-[14px] border border-dashed border-ds-border-muted bg-ds-main/35 px-3 py-4">
+              <p className="text-[13.5px] font-medium text-ds-muted">{t('clawNoImTitle')}</p>
+              <p className="mt-1 text-[12px] leading-5 text-ds-faint">
+                {t('clawNoImSub')}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {sortedChannels.map((channel) => {
+                const providerTarget: ClawInstallTarget = channel.provider === 'weixin' ? 'weixin' : 'feishu'
+                const active = channel.provider === targetProvider
+                const disabled = !channel.enabled
+                const sortedConversations = [...channel.conversations].sort(
+                  (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+                )
+                const latestConversation = sortedConversations[0] ?? null
+                const providerLabel = channel.provider === 'weixin' ? 'WeChat' : 'Feishu / Lark'
+                const secondaryLabel = latestConversation?.senderName.trim()
+                  || latestConversation?.chatId.trim()
+                  || `${providerLabel} · ${channel.model}`
+                return (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    onClick={() => setTarget(providerTarget)}
+                    className={`group flex min-h-[64px] w-full items-center gap-2 rounded-[12px] border px-2.5 py-2 text-left transition ${
+                      active
+                        ? 'border-accent/20 bg-accent/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.62)]'
+                        : 'border-transparent hover:border-ds-border hover:bg-ds-hover/70'
+                    } ${disabled ? 'opacity-55' : ''}`}
+                    title={disabled ? t('clawImDisabledSidebar') : channel.label}
+                  >
+                    <MessageSquare className="h-4 w-4 shrink-0 text-ds-faint" strokeWidth={1.75} />
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-ds-card/75">
+                      <ClawProviderLogo provider={channel.provider} className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-medium text-ds-ink">
+                        {channel.label}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[12px] text-ds-faint">
+                        {secondaryLabel}
+                      </span>
+                    </span>
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        disabled ? 'bg-ds-faint' : 'bg-emerald-400'
+                      }`}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mx-1 shrink-0 border-t border-ds-border-muted/70 pt-3">
+        <div className="mb-3 flex items-center gap-2 px-1 text-[12px] font-semibold text-[#9aa5b5] dark:text-white/40">
           <ClawProviderLogo provider={targetProvider} className="h-4 w-4" />
           <span>{t('claw')}</span>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-ds-border bg-ds-card p-1">
+
+        <div className="grid grid-cols-3 gap-1 rounded-[14px] border border-ds-border bg-ds-card p-1 shadow-sm">
           {CONNECT_PHONE_TARGETS.map((item) => {
             const active = target === item
             const provider = connectPhoneProviderForTarget(item)
@@ -874,9 +973,9 @@ export function ConnectPhoneSidebarPanel({
                 key={item}
                 type="button"
                 onClick={() => setTarget(item)}
-                className={`inline-flex min-h-[28px] items-center justify-center gap-1 rounded-lg px-2 text-[11.5px] font-semibold transition ${
+                className={`inline-flex min-h-[30px] items-center justify-center gap-1 rounded-[10px] px-2 text-[11.5px] font-semibold transition ${
                   active
-                    ? 'bg-accent/12 text-accent'
+                    ? 'bg-accent/10 text-accent'
                     : 'text-ds-faint hover:bg-ds-hover hover:text-ds-ink'
                 }`}
                 aria-pressed={active}
@@ -887,137 +986,137 @@ export function ConnectPhoneSidebarPanel({
             )
           })}
         </div>
-      </div>
 
-      {connectedChannel ? (
-        <div className="mx-1 rounded-[12px] border border-ds-border bg-ds-card px-3 py-3 shadow-sm">
-          <div className="flex items-start gap-2.5">
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
-              <CheckCircle2 className="h-4 w-4" strokeWidth={1.9} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13.5px] font-semibold text-ds-ink">
-                {connectedChannel.label}
+        {connectedChannel ? (
+          <div className="mt-3 rounded-[14px] border border-ds-border bg-ds-card px-3 py-3 shadow-sm">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4" strokeWidth={1.9} />
               </span>
-              <span className="mt-1 block truncate text-[12px] text-ds-faint">
-                {connectedChannel.enabled
-                  ? t('clawManageImConnected')
-                  : t('clawImDisabledSidebar')}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-semibold text-ds-ink">
+                  {connectedChannel.label}
+                </span>
+                <span className="mt-1 block truncate text-[12px] text-ds-faint">
+                  {connectedChannel.enabled
+                    ? t('clawManageImConnected')
+                    : t('clawImDisabledSidebar')}
+                </span>
               </span>
-            </span>
-          </div>
-          <div className="mt-3 grid gap-2">
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="inline-flex min-h-[30px] w-full items-center justify-center gap-1.5 rounded-[8px] border border-ds-border bg-ds-main/55 px-2.5 py-1.5 text-[12.5px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
-            >
-              <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
-              {t('clawSettings')}
-            </button>
-            <button
-              type="button"
-              onClick={() => void disconnectChannel()}
-              disabled={disconnecting}
-              className="inline-flex min-h-[30px] w-full items-center justify-center gap-1.5 rounded-[8px] border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[12.5px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/15"
-            >
-              {disconnecting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
-              ) : (
-                <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
-              )}
-              {disconnecting ? t('connectPhoneDisconnecting') : t('connectPhoneDisconnect')}
-            </button>
-          </div>
-          {disconnectError ? (
-            <div className="mt-2 rounded-[8px] bg-red-500/10 px-2.5 py-2 text-[12px] leading-relaxed text-red-600 dark:text-red-300">
-              {disconnectError}
             </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mx-1 flex flex-col items-center rounded-[12px] border border-ds-border bg-ds-card px-3 py-4 shadow-sm">
-          <div className="flex h-[168px] w-full items-center justify-center rounded-[10px] border border-[#ececea] bg-white p-2">
-            {installQr.status === 'idle' ? (
-              <div className="grid justify-items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-[14px] bg-[#f3f4f2] text-[#9aa2ad]">
-                  <QrCode className="h-7 w-7" strokeWidth={1.7} />
+            <div className="mt-3 grid gap-2">
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="inline-flex min-h-[30px] w-full items-center justify-center gap-1.5 rounded-[8px] border border-ds-border bg-ds-main/55 px-2.5 py-1.5 text-[12.5px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
+              >
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
+                {t('clawSettings')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void disconnectChannel()}
+                disabled={disconnecting}
+                className="inline-flex min-h-[30px] w-full items-center justify-center gap-1.5 rounded-[8px] border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[12.5px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/15"
+              >
+                {disconnecting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+                ) : (
+                  <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
+                )}
+                {disconnecting ? t('connectPhoneDisconnecting') : t('connectPhoneDisconnect')}
+              </button>
+            </div>
+            {disconnectError ? (
+              <div className="mt-2 rounded-[8px] bg-red-500/10 px-2.5 py-2 text-[12px] leading-relaxed text-red-600 dark:text-red-300">
+                {disconnectError}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-col items-center rounded-[14px] border border-ds-border bg-ds-card px-3 py-4 shadow-sm">
+            <div className="flex h-[156px] w-full items-center justify-center rounded-[10px] border border-[#ececea] bg-white p-2">
+              {installQr.status === 'idle' ? (
+                <div className="grid justify-items-center gap-3">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[14px] bg-[#f3f4f2] text-[#9aa2ad]">
+                    <QrCode className="h-7 w-7" strokeWidth={1.7} />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void startOfficialInstallQr()}
+                    className="inline-flex min-h-[32px] items-center justify-center gap-1.5 rounded-[8px] bg-[#222323] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-black dark:bg-white dark:text-black"
+                  >
+                    {t('connectPhoneGenerateQr')}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void startOfficialInstallQr()}
-                  className="inline-flex min-h-[32px] items-center justify-center gap-1.5 rounded-[8px] bg-[#222323] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-black dark:bg-white dark:text-black"
-                >
-                  {t('connectPhoneGenerateQr')}
-                </button>
-              </div>
-            ) : null}
+              ) : null}
 
-            {installQr.status === 'loading' ? (
-              <div className="grid justify-items-center gap-2 text-ds-faint">
-                <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
-                <span className="text-[12px]">{t('connectPhoneQrLoading')}</span>
-              </div>
-            ) : null}
+              {installQr.status === 'loading' ? (
+                <div className="grid justify-items-center gap-2 text-ds-faint">
+                  <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+                  <span className="text-[12px]">{t('connectPhoneQrLoading')}</span>
+                </div>
+              ) : null}
 
-            {installQr.url && installQr.status !== 'loading' ? (
-              installQrIsImage ? (
-                <img
-                  src={installQr.url}
-                  alt={t('connectPhoneGenerateQr')}
-                  className="h-[148px] w-[148px] object-contain"
-                />
-              ) : (
-                <QRCodeSVG value={installQr.url} size={148} marginSize={1} />
-              )
-            ) : null}
-          </div>
-
-          {installQr.status === 'showing' ? (
-            <div className="mt-3 text-center text-[12px] text-[#8d95a1]">
-              {t('clawAddImOfficialQrTimeLeft', { seconds: installQr.timeLeft })}
-            </div>
-          ) : null}
-
-          {installQr.status === 'success' ? (
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-600 dark:text-emerald-300">
-              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.9} />
-              {saving ? t('connectPhoneBinding') : t('clawAddImOfficialQrSuccess')}
-            </div>
-          ) : null}
-
-          {installQr.status === 'error' ? (
-            <div className="mt-3 grid justify-items-center gap-2">
-              <div className="max-w-[220px] text-center text-[12px] leading-5 text-red-600 dark:text-red-300">
-                {installQr.error || t('clawAddImOfficialQrFailed')}
-              </div>
-              {!hasExistingChannel ? (
-                <button
-                  type="button"
-                  onClick={() => void startOfficialInstallQr()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-ds-border bg-ds-card px-2.5 py-1.5 text-[12px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  {t('clawAddImOfficialQrRetry')}
-                </button>
+              {installQr.url && installQr.status !== 'loading' ? (
+                installQrIsImage ? (
+                  <img
+                    src={installQr.url}
+                    alt={t('connectPhoneGenerateQr')}
+                    className="h-[136px] w-[136px] object-contain"
+                  />
+                ) : (
+                  <QRCodeSVG value={installQr.url} size={136} marginSize={1} />
+                )
               ) : null}
             </div>
-          ) : null}
 
-          <div className="mt-4 text-center text-[12px] leading-5 text-[#8d95a1]">
-            <div className="inline-flex items-center justify-center gap-1.5 font-medium text-[#68707c] dark:text-white/55">
-              <ClawProviderLogo provider={targetProvider} className="h-4 w-4" />
-              {clawInstallTargetLabel(t, target)}
-            </div>
-            <div className="mt-1">{t('connectPhoneAutoBindHint')}</div>
-            {displayUserCode ? (
-              <div className="mt-2 font-mono text-[13px] tracking-normal text-ds-ink">
-                {t('connectPhoneUserCode', { code: displayUserCode })}
+            {installQr.status === 'showing' ? (
+              <div className="mt-3 text-center text-[12px] text-[#8d95a1]">
+                {t('clawAddImOfficialQrTimeLeft', { seconds: installQr.timeLeft })}
               </div>
             ) : null}
+
+            {installQr.status === 'success' ? (
+              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-600 dark:text-emerald-300">
+                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.9} />
+                {saving ? t('connectPhoneBinding') : t('clawAddImOfficialQrSuccess')}
+              </div>
+            ) : null}
+
+            {installQr.status === 'error' ? (
+              <div className="mt-3 grid justify-items-center gap-2">
+                <div className="max-w-[220px] text-center text-[12px] leading-5 text-red-600 dark:text-red-300">
+                  {installQr.error || t('clawAddImOfficialQrFailed')}
+                </div>
+                {!hasExistingChannel ? (
+                  <button
+                    type="button"
+                    onClick={() => void startOfficialInstallQr()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ds-border bg-ds-card px-2.5 py-1.5 text-[12px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    {t('clawAddImOfficialQrRetry')}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="mt-4 text-center text-[12px] leading-5 text-[#8d95a1]">
+              <div className="inline-flex items-center justify-center gap-1.5 font-medium text-[#68707c] dark:text-white/55">
+                <ClawProviderLogo provider={targetProvider} className="h-4 w-4" />
+                {clawInstallTargetLabel(t, target)}
+              </div>
+              <div className="mt-1">{t('connectPhoneAutoBindHint')}</div>
+              {displayUserCode ? (
+                <div className="mt-2 font-mono text-[13px] tracking-normal text-ds-ink">
+                  {t('connectPhoneUserCode', { code: displayUserCode })}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

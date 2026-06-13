@@ -25,7 +25,6 @@ import { buildClawRuntimePrompt, getActiveAgentApiKey } from '@shared/app-settin
 import type { ChatState, ChatStoreGet, ChatStoreSet } from './chat-store-types'
 import {
   activeClawChannel,
-  compactCodeWorkspaceRoots,
   forgetCodeWorkspaceRoot,
   hydrateBlockModelLabels,
   isClawThread,
@@ -33,7 +32,9 @@ import {
   readCodeWorkspaceRoots,
   readStoredComposerModel,
   rememberCodeWorkspaceRoots,
-  rememberTurnModel
+  rememberTurnModel,
+  reconcileCodeWorkspaceRoots,
+  saveCodeWorkspaceRoots
 } from './chat-store-helpers'
 import {
   clearedThreadSelection,
@@ -351,7 +352,18 @@ export function createNavigationActions(
         }
         const settings = await rendererRuntimeClient.getSettings({ forceRefresh: true })
         const workspaceRoot = normalizeWorkspaceRoot(settings.workspaceRoot)
-        const codeWorkspaceRoots = rememberCodeWorkspaceRoots(readCodeWorkspaceRoots(), [workspaceRoot])
+        const writeWorkspaceRoots = [
+          settings.write.defaultWorkspaceRoot,
+          settings.write.activeWorkspaceRoot,
+          ...settings.write.workspaces
+        ]
+        const codeWorkspaceRoots = reconcileCodeWorkspaceRoots({
+          currentRoots: readCodeWorkspaceRoots(),
+          codeThreadWorkspaceRoots: [workspaceRoot],
+          writeWorkspaceRoots,
+          preservedWorkspaceRoots: [workspaceRoot]
+        })
+        saveCodeWorkspaceRoots(codeWorkspaceRoots)
         const needsInitialSetup = !getActiveAgentApiKey(settings).trim()
         applyTheme(settings.theme)
         applyUiFontScale(settings.uiFontScale)
@@ -454,34 +466,6 @@ export function createNavigationActions(
       const workspaceRoot = normalizeWorkspaceRoot(next.workspaceRoot)
       const codeWorkspaceRoots = rememberCodeWorkspaceRoots(get().codeWorkspaceRoots, [workspaceRoot])
 
-      // Update the active thread's workspace so the current session
-      // moves to the newly picked directory instead of creating a
-      // new thread or switching away. Only treat the thread as moved
-      // when the PATCH actually succeeds — otherwise we must fall
-      // through to the fallback selection below, or the global
-      // workspaceRoot and the active thread would diverge.
-      const activeThreadId = get().activeThreadId
-      let movedActiveThread = false
-      if (activeThreadId && workspaceRoot) {
-        const p = getProvider()
-        if (typeof p.updateThreadWorkspace === 'function') {
-          try {
-            await p.updateThreadWorkspace(activeThreadId, workspaceRoot)
-            // Update the local threads list so the sidebar shows the
-            // thread under the new workspace immediately.
-            set((s) => ({
-              threads: s.threads.map((thread) =>
-                thread.id === activeThreadId ? { ...thread, workspace: workspaceRoot } : thread
-              )
-            }))
-            movedActiveThread = true
-          } catch {
-            // PATCH failed — leave movedActiveThread false so we fall
-            // through to the existing fallback selection below.
-          }
-        }
-      }
-
       set({
         workspaceRoot,
         codeWorkspaceRoots,
@@ -495,8 +479,6 @@ export function createNavigationActions(
           await get().openWrite()
           return workspaceRoot
         }
-        // If we successfully moved the active thread, stay on it.
-        if (movedActiveThread) return workspaceRoot
         const workspaceThreads = get().threads
           .filter((thread) => isCodeThread(thread, get().clawChannels))
           .filter((thread) => threadBelongsToWorkspace(thread, workspaceRoot))
@@ -623,12 +605,6 @@ export function createNavigationActions(
         workspace: normalizeWorkspaceRoot(thread.workspace)
       }))
       const sddThreadRegistry = readSddThreadRegistry()
-      const codeWorkspaceRoots = rememberCodeWorkspaceRoots(
-        get().codeWorkspaceRoots,
-        threads
-          .filter((thread) => isCodeThread(thread, get().clawChannels))
-          .map((thread) => thread.workspace)
-      )
       const sidebarThreads = (await filterThreadsForSidebar(threads, p))
         .filter((thread) => !isSddAssistantThread(thread, sddThreadRegistry))
       const forkRegistry = hydrateThreadForkRegistry(sidebarThreads, readThreadForkRegistry())
@@ -685,6 +661,19 @@ export function createNavigationActions(
         const writeWorkspace = writeWorkspaceForThreadId(thread.id, writeRegistry)
         return writeWorkspace ? { ...thread, workspace: writeWorkspace } : thread
       })
+      const codeThreadWorkspaceRoots = [
+        ...threads,
+        ...displayThreads
+      ]
+        .filter((thread) => isCodeThread(thread, get().clawChannels, writeRegistry))
+        .map((thread) => thread.workspace)
+      const codeWorkspaceRoots = reconcileCodeWorkspaceRoots({
+        currentRoots: get().codeWorkspaceRoots,
+        codeThreadWorkspaceRoots,
+        writeWorkspaceRoots,
+        preservedWorkspaceRoots: [get().workspaceRoot]
+      })
+      saveCodeWorkspaceRoots(codeWorkspaceRoots)
       const activeThreadId = get().activeThreadId
       const activeThread = activeThreadId
         ? displayThreads.find((thread) => thread.id === activeThreadId) ?? null
@@ -716,12 +705,7 @@ export function createNavigationActions(
         }
         return {
           threads: displayThreads,
-          codeWorkspaceRoots: compactCodeWorkspaceRoots([
-            ...displayThreads
-              .filter((thread) => isCodeThread(thread, s.clawChannels))
-              .map((thread) => thread.workspace),
-            ...codeWorkspaceRoots
-          ]),
+          codeWorkspaceRoots,
           watchTurnCompletion: w,
           unreadThreadIds: u,
           ...(shouldClearSelection ? clearedThreadSelection() : {})

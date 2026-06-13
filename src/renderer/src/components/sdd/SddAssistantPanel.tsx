@@ -23,10 +23,11 @@ type Props = {
   liveReasoning: string
   liveAssistant: string
   composerModel: string
+  composerProviderId?: string
   composerPickList: string[]
   composerModelGroups?: ModelProviderModelGroup[]
   composerReasoningEffort: ComposerReasoningEffort
-  setComposerModel: (modelId: string) => void
+  setComposerModel: (modelId: string, providerId?: string) => void
   setComposerReasoningEffort: (effort: ComposerReasoningEffort) => void
   queuedMessages: QueuedUserMessage[]
   removeQueuedMessage: (id: string) => void
@@ -41,6 +42,7 @@ type Props = {
   onInterrupt: (options?: { discard?: boolean }) => void
   onRetryConnection: () => void
   onOpenSettings: () => void
+  onConfigureProviders?: () => void
   onNewConversation: () => void
   onCollapse: () => void
   className?: string
@@ -59,6 +61,7 @@ export function SddAssistantPanel({
   liveReasoning,
   liveAssistant,
   composerModel,
+  composerProviderId,
   composerPickList,
   composerModelGroups = [],
   composerReasoningEffort,
@@ -77,6 +80,7 @@ export function SddAssistantPanel({
   onInterrupt,
   onRetryConnection,
   onOpenSettings,
+  onConfigureProviders,
   onNewConversation,
   onCollapse,
   className = ''
@@ -213,6 +217,7 @@ export function SddAssistantPanel({
           runtimeReady={runtimeConnection === 'ready'}
           hasActiveThread={Boolean(activeThreadId)}
           composerModel={composerModel}
+          composerProviderId={composerProviderId}
           composerPickList={composerPickList}
           composerModelGroups={composerModelGroups}
           composerReasoningEffort={composerReasoningEffort}
@@ -230,6 +235,7 @@ export function SddAssistantPanel({
           onRemoveAttachment={onRemoveAttachment}
           onSend={onSend}
           onInterrupt={onInterrupt}
+          onConfigureProviders={onConfigureProviders}
         />
       </div>
     </aside>

@@ -85,7 +85,8 @@ function RuntimeWakeHero({
 
   return (
     <div className="ds-runtime-wake-hero ds-no-drag px-6 pb-8 pt-12 text-center md:pt-16">
-      <KunHeroStage />
+      {/* 报错时关掉「唤醒中」动效,沿用 #78 的原则:错误不该看起来像还在加载 */}
+      <KunHeroStage waking={!hasError} />
 
       <p className="text-[12px] font-semibold uppercase tracking-[0] text-accent">
         {t('runtimeOfflineHeroKicker')}
@@ -177,7 +178,7 @@ export function MessageTimelineEmptyHero({
     )
   }
 
-  return <InitialSessionUsageHeatmap calendarOnly={focusModeEnabled} />
+  return <InitialSessionUsageHeatmap hideHero={focusModeEnabled} />
 }
 
 export function ThreadForkBanner({ parentTitle }: { parentTitle: string }): ReactElement {

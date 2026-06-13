@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * Structured API error codes returned by every Kun HTTP/SSE endpoint.
  *
- * The error contract mirrors what DeepSeek-GUI diagnostics can render:
+ * The error contract mirrors what Kun diagnostics can render:
  * the renderer needs a stable `code` to drive UI state and a human-readable
  * `message` to surface in toasts. `details` carries optional, JSON-encodable
  * per-endpoint information (for example a Zod issue list).

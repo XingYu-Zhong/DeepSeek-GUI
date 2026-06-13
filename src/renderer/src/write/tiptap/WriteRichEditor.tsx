@@ -17,8 +17,10 @@ import type {
   WriteSelectionAnchorRect,
   WriteSelectionRange
 } from '../../components/write/WriteMarkdownEditor'
+import { NodeSelection } from '@tiptap/pm/state'
 import type { EditorState } from '@tiptap/pm/state'
 import { buildInlineCompletionPayload } from '../inline-completion'
+import { isSelectableRasterImageSrc } from '../selected-image'
 import type { WriteBlockType } from '../block-type'
 import type { WriteInlineFormatKind } from '../inline-format'
 import { createWriteRecentEdit, type WriteRecentEdit } from '../recent-edits'
@@ -63,6 +65,9 @@ export type WriteRichEditorHandle = {
    * (an empty string deletes the node). Backs async infographic completion,
    * where the placeholder position can shift under concurrent edits. */
   replaceImageBySrc: (src: string, replacementMarkdown: string) => boolean
+  /** Insert parsed markdown right after the image node whose src matches
+   * exactly (prototype placeholders go below their source mockup). */
+  insertMarkdownAfterImage: (src: string, markdown: string) => boolean
   /** Toggle an inline mark on the current selection (selection toolbar). */
   toggleInlineFormat: (kind: WriteInlineFormatKind) => boolean
   /** Set the block type of the current selection (selection toolbar). */
@@ -163,6 +168,44 @@ export function selectionStateFromEditor(editor: Editor): WriteEditorSelectionSt
   const projection = buildWriteRichMarkdownProjection(doc)
   const ranges: WriteSelectionRange[] = []
   const rects: Array<{ left: number; right: number; top: number; bottom: number }> = []
+
+  // A node-selected raster image surfaces the image-aware toolbar;
+  // text ranges below stay empty for node selections (pmFrom === pmTo - size
+  // collapses to no projected text).
+  const nodeSelection = state.selection instanceof NodeSelection ? state.selection : null
+  if (nodeSelection?.node.type.name === 'image') {
+    const src = typeof nodeSelection.node.attrs.src === 'string' ? nodeSelection.node.attrs.src : ''
+    if (isSelectableRasterImageSrc(src)) {
+      const alt = typeof nodeSelection.node.attrs.alt === 'string' ? nodeSelection.node.attrs.alt : ''
+      let anchorRect: WriteEditorSelectionState['anchorRect']
+      const nodeDom = view.nodeDOM(nodeSelection.from)
+      if (nodeDom instanceof HTMLElement) {
+        const rect = nodeDom.getBoundingClientRect()
+        anchorRect = {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height
+        }
+      } else {
+        try {
+          const coords = view.coordsAtPos(nodeSelection.from)
+          anchorRect = { ...coords, width: coords.right - coords.left, height: coords.bottom - coords.top }
+        } catch {
+          anchorRect = undefined
+        }
+      }
+      return {
+        text: '',
+        ranges: [],
+        charCount: 0,
+        selectedImage: { src, alt },
+        ...(anchorRect ? { anchorRect } : {})
+      }
+    }
+  }
 
   for (const range of state.selection.ranges) {
     const pmFrom = range.$from.pos
@@ -482,6 +525,27 @@ export function WriteRichEditor({
             from,
             to,
             replacementMarkdown
+          )
+        },
+        insertMarkdownAfterImage: (src, markdown) => {
+          const instance = editorRef.current
+          if (!instance || instance.isDestroyed) return false
+          let insertAt: number | null = null
+          instance.state.doc.descendants((docNode, pos) => {
+            if (insertAt !== null) return false
+            if (docNode.type.name === 'image' && docNode.attrs.src === src) {
+              insertAt = pos + docNode.nodeSize
+              return false
+            }
+            return true
+          })
+          if (insertAt === null) return false
+          return replaceRangeWithMarkdown(
+            instance.state,
+            (tr) => instance.view.dispatch(tr),
+            insertAt,
+            insertAt,
+            markdown
           )
         },
         toggleInlineFormat: (kind) => {

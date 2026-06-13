@@ -46,6 +46,8 @@ describe('initialSetupSelection', () => {
     expect(initialSetupSelection(settings())).toEqual({ presetId: 'deepseek', mode: 'api' })
     expect(initialSetupSelection(settings({ agents: { kun: { providerId: 'custom-provider-2' } } })))
       .toEqual({ presetId: 'deepseek', mode: 'api' })
+    expect(initialSetupSelection(settings({ agents: { kun: { providerId: 'litellm' } } })))
+      .toEqual({ presetId: 'deepseek', mode: 'api' })
   })
 })
 
@@ -59,6 +61,10 @@ describe('initialSetupDrafts', () => {
       baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1'
     })
     expect(drafts['minimax-token-plan'].baseUrl).toBe('https://api.minimaxi.com/anthropic')
+  })
+
+  it('does not seed LiteLLM as an onboarding provider', () => {
+    expect(initialSetupDrafts(settings()).litellm).toBeUndefined()
   })
 })
 

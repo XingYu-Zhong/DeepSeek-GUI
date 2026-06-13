@@ -24,10 +24,10 @@ function createMemoryStorage(): Storage {
 function directory(entries: Array<{ name: string, type: 'file' | 'directory', path?: string }>): WorkspaceDirectoryListResult {
   return {
     ok: true,
-    root: '/tmp/app/.kunsdd/draft',
+    root: '/tmp/app/.kunsdd/requirements',
     entries: entries.map((entry) => ({
       name: entry.name,
-      path: entry.path ?? `/tmp/app/.kunsdd/draft/${entry.name}`,
+      path: entry.path ?? `/tmp/app/.kunsdd/requirements/${entry.name}`,
       type: entry.type,
       ext: entry.type === 'file' ? '.md' : ''
     }))
@@ -54,22 +54,22 @@ describe('sdd-draft-history', () => {
     expect(titleFromSddDraftContent('', 'fallback')).toBe('fallback')
   })
 
-  it('discovers disk-only requirement drafts under .kunsdd/draft', async () => {
+  it('discovers disk-only requirement drafts under .kunsdd/requirements', async () => {
     const draftId = '123e4567-e89b-12d3-a456-426614174000'
     const listWorkspaceDirectory = vi.fn(async (options: WorkspaceDirectoryTarget) => {
-      if (options.path === '.kunsdd/draft') {
+      if (options.path === '.kunsdd/requirements') {
         return directory([
           { name: draftId, type: 'directory' },
           { name: 'not-a-draft', type: 'directory' },
           { name: 'requirement.md', type: 'file' }
         ])
       }
-      if (options.path === `.kunsdd/draft/${draftId}`) {
+      if (options.path === `.kunsdd/requirements/${draftId}`) {
         return directory([
           {
             name: 'requirement.md',
             type: 'file',
-            path: `/tmp/app/.kunsdd/draft/${draftId}/requirement.md`
+            path: `/tmp/app/.kunsdd/requirements/${draftId}/requirement.md`
           }
         ])
       }
@@ -77,7 +77,7 @@ describe('sdd-draft-history', () => {
     })
     const readWorkspaceFile = vi.fn(async (_options: WorkspaceFileTarget) => ({
       ok: true as const,
-      path: `/tmp/app/.kunsdd/draft/${draftId}/requirement.md`,
+      path: `/tmp/app/.kunsdd/requirements/${draftId}/requirement.md`,
       content: '# Payment requirement\n\n## Goal',
       size: 28,
       truncated: false
@@ -92,7 +92,8 @@ describe('sdd-draft-history', () => {
     expect(history).toHaveLength(1)
     expect(history[0]).toMatchObject({
       title: 'Payment requirement',
-      relativePath: `.kunsdd/draft/${draftId}/requirement.md`,
+      relativePath: `.kunsdd/requirements/${draftId}/requirement.md`,
+      searchText: '# Payment requirement\n\n## Goal',
       source: 'disk'
     })
   })
@@ -110,18 +111,18 @@ describe('sdd-draft-history', () => {
     useSddDraftStore.getState().clearActiveDraft()
 
     const listWorkspaceDirectory = vi.fn(async (options: WorkspaceDirectoryTarget) => {
-      if (options.path === '.kunsdd/draft') {
+      if (options.path === '.kunsdd/requirements') {
         return directory([{ name: '123e4567-e89b-12d3-a456-426614174000', type: 'directory' }])
       }
       return directory([{
         name: 'requirement.md',
         type: 'file',
-        path: '/tmp/app/.kunsdd/draft/123e4567-e89b-12d3-a456-426614174000/requirement.md'
+        path: '/tmp/app/.kunsdd/requirements/123e4567-e89b-12d3-a456-426614174000/requirement.md'
       }])
     })
     const readWorkspaceFile = vi.fn(async () => ({
       ok: true as const,
-      path: '/tmp/app/.kunsdd/draft/123e4567-e89b-12d3-a456-426614174000/requirement.md',
+      path: '/tmp/app/.kunsdd/requirements/123e4567-e89b-12d3-a456-426614174000/requirement.md',
       content: '# Disk title',
       size: 12,
       truncated: false
@@ -137,6 +138,7 @@ describe('sdd-draft-history', () => {
     expect(history[0]).toMatchObject({
       id: draft.id,
       title: 'Local unsaved title',
+      searchText: '# Local unsaved title',
       source: 'remembered'
     })
   })

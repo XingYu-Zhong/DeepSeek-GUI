@@ -23,6 +23,7 @@ const labels: Record<string, string> = {
   imageGenApiKeyDesc: 'Independent image provider key',
   imageGenModel: 'Image model',
   imageGenModelDesc: 'Model id sent to the provider',
+  imageGenModelQualityHint: 'Prefer GPT Image or Gemini image models for design drafts and infographics',
   imageGenModelPlaceholder: 'gpt-image-1',
   imageGenDefaultSize: 'Default size',
   imageGenDefaultSizeDesc: 'Default size description',
@@ -58,6 +59,7 @@ describe('ImageGenerationSettingsSection', () => {
 
     expect(html).toContain('Image generation')
     expect(html).toContain('Enables agent chats and Write infographics')
+    expect(html).toContain('Prefer GPT Image or Gemini image models for design drafts and infographics')
     expect(html).toContain('value="https://images.example.com/v1"')
     expect(html).toContain('value="sk-image"')
     expect(html).toContain('value="image-model"')

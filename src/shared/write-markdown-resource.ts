@@ -2,6 +2,17 @@ function normalizePath(value: string): string {
   return value.replaceAll('\\', '/')
 }
 
+const WINDOWS_DRIVE_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/
+const WINDOWS_DRIVE_SEGMENT_RE = /^[a-zA-Z]:$/
+
+function isWindowsDriveAbsolutePath(value: string): boolean {
+  return WINDOWS_DRIVE_ABSOLUTE_RE.test(value.trim())
+}
+
+function isUncPath(value: string): boolean {
+  return /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+/.test(value.trim())
+}
+
 function dirnamePortable(filePath: string): string {
   const normalized = normalizePath(filePath)
   const slash = normalized.lastIndexOf('/')
@@ -25,20 +36,35 @@ function normalizeJoinedPath(pathname: string): string {
   return `${prefix}${parts.join('/')}`
 }
 
+function normalizeUncPath(pathname: string): string {
+  return `//${normalizeJoinedPath(normalizePath(pathname).replace(/^\/+/, ''))}`
+}
+
+function normalizeAbsolutePath(pathname: string): string {
+  return isUncPath(pathname) ? normalizeUncPath(pathname) : normalizeJoinedPath(pathname)
+}
+
+function encodePathSegment(part: string): string {
+  if (WINDOWS_DRIVE_SEGMENT_RE.test(part)) return part
+  return encodeURIComponent(part).replaceAll('~', '%7E')
+}
+
 export function writePathToFileUrl(pathname: string): string {
+  if (isUncPath(pathname)) {
+    const normalized = normalizeUncPath(pathname)
+    const [host = '', ...parts] = normalized.replace(/^\/\//, '').split('/')
+    const encodedPath = parts.map(encodePathSegment).join('/')
+    return `file://${host}${encodedPath ? `/${encodedPath}` : ''}`
+  }
   const normalized = normalizeJoinedPath(pathname)
-  const encoded = normalized
-    .split('/')
-    .map((part) => {
-      if (/^[a-zA-Z]:$/.test(part)) return part
-      return encodeURIComponent(part).replaceAll('~', '%7E')
-    })
-    .join('/')
+  const encoded = normalized.split('/').map(encodePathSegment).join('/')
   return `file://${encoded.startsWith('/') ? encoded : `/${encoded}`}`
 }
 
 export function isExplicitWriteResourceUrl(value: string): boolean {
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)
+  const trimmed = value.trim()
+  if (isWindowsDriveAbsolutePath(trimmed) || isUncPath(trimmed)) return false
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)
 }
 
 function explicitResourceProtocol(value: string): string | null {
@@ -70,8 +96,8 @@ export function resolveWriteMarkdownResourcePath(
   const [pathname, suffix = ''] = value.split(/([?#].*)/, 2)
   const baseDir = dirnamePortable(filePath)
   if (!baseDir || suffix) return undefined
-  const resolved = pathname.startsWith('/')
-    ? normalizeJoinedPath(pathname)
+  const resolved = pathname.startsWith('/') || isWindowsDriveAbsolutePath(pathname) || isUncPath(pathname)
+    ? normalizeAbsolutePath(pathname)
     : normalizeJoinedPath(`${baseDir}/${pathname}`)
   return resolved
 }

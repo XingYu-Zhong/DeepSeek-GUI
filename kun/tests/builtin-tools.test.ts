@@ -197,6 +197,35 @@ describe('Kun built-in tools', () => {
     await expect(readFile(join(workspace, 'blocked.md'), 'utf8')).rejects.toThrow()
   })
 
+  it('answers truncated tool arguments with actionable chunking guidance', async () => {
+    // tool-argument-repair wraps unparseable JSON (usually cut off by the
+    // model output limit mid-payload) as { __raw }.
+    const truncated = '{"content": "<!DOCTYPE html><html><body>cut off mid stri'
+    const writeResult = await host.execute(
+      {
+        callId: 'call_write_raw',
+        toolName: 'write',
+        arguments: { __raw: truncated }
+      },
+      buildContext(workspace)
+    )
+    expect(writeResult.item).toMatchObject({ kind: 'tool_result', isError: true })
+    const writeError = String((writeResult.item as { output?: { error?: string } }).output?.error)
+    expect(writeError).toContain('truncated')
+    expect(writeError).toContain('smaller')
+
+    const editResult = await host.execute(
+      {
+        callId: 'call_edit_raw',
+        toolName: 'edit',
+        arguments: { __raw: truncated }
+      },
+      buildContext(workspace)
+    )
+    expect(editResult.item).toMatchObject({ kind: 'tool_result', isError: true })
+    expect(String((editResult.item as { output?: { error?: string } }).output?.error)).toContain('truncated')
+  })
+
   it('blocks host shell execution in workspace-write sandbox mode', async () => {
     const result = await host.execute(
       {

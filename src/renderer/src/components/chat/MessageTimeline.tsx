@@ -93,6 +93,17 @@ function turnPreview(turn: Turn, fallback: string): string {
   return oneLine.length > 48 ? `${oneLine.slice(0, 47).trimEnd()}...` : oneLine
 }
 
+function processBlockHasError(block: ChatBlock): boolean {
+  return (
+    (block.kind === 'tool' && block.status === 'error') ||
+    (block.kind === 'compaction' && block.status === 'error') ||
+    (block.kind === 'review' && block.status === 'error') ||
+    (block.kind === 'approval' && block.status === 'error') ||
+    (block.kind === 'user_input' && block.status === 'error') ||
+    (block.kind === 'system' && block.severity === 'error')
+  )
+}
+
 export function MessageTimeline({
   blocks,
   liveReasoning,
@@ -407,7 +418,6 @@ function MessageTurn({
   const { think: liveThink, content: liveContent } = splitThink(live)
   const liveProcessText = [liveReasoning, liveThink].filter(Boolean).join('\n\n')
   const [workExpandedOverride, setWorkExpandedOverride] = useState<boolean | null>(null)
-  const workExpanded = workExpandedOverride ?? isProcessing
 
   const { processBlocks, assistantContentBlocks, generatedFileBlocks, turnFileChanges } = useMemo(
     () =>
@@ -420,6 +430,8 @@ function MessageTurn({
       }),
     [turn, isProcessing, liveProcessText, liveContent, workspaceRoot]
   )
+  const hasProcessError = processBlocks.some(processBlockHasError)
+  const workExpanded = hasProcessError || (workExpandedOverride ?? isProcessing)
   const reviewBlocks = useMemo(
     () => turn.blocks.filter((block) => block.kind === 'review'),
     [turn.blocks]
@@ -452,6 +464,7 @@ function MessageTurn({
             durationMs={durationMs}
             reasoningDurationMs={reasoningDurationMs}
             expanded={workExpanded}
+            collapsible={!hasProcessError}
             onToggle={() => setWorkExpandedOverride((value) => !(value ?? isProcessing))}
           />
           {workExpanded && processSections.length > 0 ? (

@@ -33,6 +33,12 @@ import {
   replaceFileMentionInInput
 } from '../../lib/composer-file-references'
 
+const DEEPSEEK_PROVIDER_GROUP = {
+  providerId: 'deepseek',
+  label: 'DeepSeek',
+  modelIds: ['deepseek-v4-pro', 'deepseek-v4-flash']
+}
+
 describe('FloatingComposer slash commands', () => {
   it('parses compact command aliases', () => {
     expect(parseCompactCommand('/compact')).toEqual({})
@@ -325,6 +331,7 @@ describe('FloatingComposer model controls', () => {
         mode: 'select',
         composerModel: 'auto',
         composerPickList: ['auto', 'deepseek-v4-pro'],
+        composerModelGroups: [DEEPSEEK_PROVIDER_GROUP],
         composerReasoningEffort: 'high',
         canChangeModel: true,
         onComposerModelChange: () => undefined,
@@ -334,6 +341,43 @@ describe('FloatingComposer model controls', () => {
 
     expect(html).toContain('Auto')
     expect(html).toContain('High')
+  })
+
+  it('keeps provider setup reachable when no chat providers are available', () => {
+    const html = renderToStaticMarkup(
+      createElement(FloatingComposerModelPicker, {
+        compact: false,
+        mode: 'select',
+        composerModel: 'auto',
+        composerPickList: ['auto'],
+        composerModelGroups: [],
+        canChangeModel: false,
+        onComposerModelChange: () => undefined,
+        onConfigureProviders: () => undefined
+      })
+    )
+
+    expect(html).toContain('Set up provider')
+    expect(html).toContain('aria-haspopup="menu"')
+    expect(html).not.toContain('disabled=""')
+  })
+
+  it('does not treat default fallback models as configured providers', () => {
+    const html = renderToStaticMarkup(
+      createElement(FloatingComposerModelPicker, {
+        compact: false,
+        mode: 'select',
+        composerModel: 'deepseek-v4-pro',
+        composerPickList: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+        composerModelGroups: [],
+        canChangeModel: true,
+        onComposerModelChange: () => undefined,
+        onConfigureProviders: () => undefined
+      })
+    )
+
+    expect(html).toContain('Set up provider')
+    expect(html).not.toContain('deepseek-v4-pro')
   })
 })
 
@@ -755,6 +799,7 @@ describe('FloatingComposer capability controls', () => {
         hasActiveThread: true,
         composerModel: 'deepseek-v4-pro',
         composerPickList: ['deepseek-v4-pro'],
+        composerModelGroups: [DEEPSEEK_PROVIDER_GROUP],
         onComposerModelChange: () => undefined,
         queuedMessages: [],
         onRemoveQueuedMessage: () => undefined,
@@ -780,6 +825,7 @@ describe('FloatingComposer capability controls', () => {
         mode: 'select',
         composerModel: 'deepseek-v4-pro',
         composerPickList: ['auto', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+        composerModelGroups: [DEEPSEEK_PROVIDER_GROUP],
         canChangeModel: true,
         composerReasoningEffort: 'max',
         onComposerReasoningEffortChange: () => undefined,
@@ -802,6 +848,7 @@ describe('FloatingComposer capability controls', () => {
         mode: 'combobox',
         composerModel: 'deepseek-v4-flash',
         composerPickList: ['auto', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+        composerModelGroups: [DEEPSEEK_PROVIDER_GROUP],
         canChangeModel: true,
         composerReasoningEffort: 'high',
         onComposerReasoningEffortChange: () => undefined,

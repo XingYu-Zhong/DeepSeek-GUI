@@ -26,9 +26,11 @@ import {
   upsertUserBlock
 } from './chat-store-runtime-helpers'
 import {
-  isWriteThreadId
+  isWriteThreadId,
+  type WriteThreadRegistry
 } from '../write/write-thread-registry'
 import { isSddAssistantThread } from '../sdd/sdd-thread-registry'
+import { notifySddChatTranscriptMirror } from '../sdd/sdd-chat-transcript'
 import { useWriteWorkspaceStore } from '../write/write-workspace-store'
 import {
   armBusyWatchdog as armBusyWatchdogImpl,
@@ -359,7 +361,8 @@ export function looksLikeActiveTurnError(error: unknown): boolean {
 
 export function isCodeThread(
   thread: NormalizedThread,
-  clawChannels: ClawImChannelV1[] = []
+  clawChannels: ClawImChannelV1[] = [],
+  writeRegistry?: WriteThreadRegistry
 ): boolean {
   const workspace = normalizeWorkspaceRoot(thread.workspace)
   return Boolean(workspace) &&
@@ -367,7 +370,7 @@ export function isCodeThread(
     !isInternalTemporaryWorkspace(thread.workspace) &&
     !isClawWorkspacePath(thread.workspace) &&
     !isClawThread(thread, clawChannels) &&
-    !isWriteThreadId(thread.id) &&
+    !isWriteThreadId(thread.id, writeRegistry) &&
     !isSddAssistantThread(thread)
 }
 
@@ -451,9 +454,47 @@ function runtimeErrorPayloadToError(event: {
   }))
 }
 
+function normalizeRuntimeErrorText(value: string | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function sameRuntimeErrorContent(
+  left: Extract<ChatBlock, { kind: 'system' }>,
+  right: Extract<ChatBlock, { kind: 'system' }>
+): boolean {
+  return (
+    left.severity === right.severity &&
+    left.code === right.code &&
+    normalizeRuntimeErrorText(left.text) === normalizeRuntimeErrorText(right.text) &&
+    normalizeRuntimeErrorText(left.detail) === normalizeRuntimeErrorText(right.detail)
+  )
+}
+
+function findSameTurnRuntimeErrorIndex(
+  blocks: ChatBlock[],
+  block: Extract<ChatBlock, { kind: 'system' }>
+): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const candidate = blocks[index]
+    if (candidate.kind === 'user') break
+    if (candidate.kind === 'system' && sameRuntimeErrorContent(candidate, block)) return index
+  }
+  return -1
+}
+
 function upsertRuntimeErrorBlock(blocks: ChatBlock[], block: Extract<ChatBlock, { kind: 'system' }>): ChatBlock[] {
   const index = blocks.findIndex((candidate) => candidate.kind === 'system' && candidate.id === block.id)
-  if (index < 0) return [...blocks, block]
+  if (index < 0) {
+    const duplicateIndex = findSameTurnRuntimeErrorIndex(blocks, block)
+    if (duplicateIndex < 0) return [...blocks, block]
+    const next = [...blocks]
+    const existing = next[duplicateIndex]
+    next[duplicateIndex] = {
+      ...block,
+      createdAt: existing?.createdAt ?? block.createdAt
+    }
+    return next
+  }
   const next = [...blocks]
   next[index] = block
   return next
@@ -1046,6 +1087,7 @@ export function buildThreadEventSink(
       }
       notifyTurnComplete(completedThreadId, completedState, completedKey)
       notifyWriteWorkspaceFileRefresh(get)
+      notifySddChatTranscriptMirror(get)
       syncTurnCompletionPoll(set, get)
       void get().refreshThreads()
       void get().drainQueuedMessages()

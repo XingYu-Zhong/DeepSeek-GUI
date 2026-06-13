@@ -13,6 +13,7 @@ import {
 import { buildInlineCompletionExtension, buildInlineCompletionPayload } from '../../write/inline-completion'
 import { writeMarkdownLivePreviewExtensions } from '../../write/markdown-live-preview'
 import { createWriteRecentEdit, type WriteRecentEdit } from '../../write/recent-edits'
+import { isSelectableRasterImageSrc, parseImageMarkdownLine } from '../../write/selected-image'
 import { buildWriteTemplateShortcutExpansion } from '../../write/template-shortcuts'
 import {
   buildWriteCanonicalTermPropagationChanges,
@@ -61,6 +62,16 @@ export type WriteEditorSelectionState = {
   pageEnd?: number
   /** Block type of the line at the selection start (selection toolbar). */
   blockType?: WriteBlockType
+  /** Set when a single raster image is selected (TipTap node selection or a
+   * caret on an image markdown line in source mode). */
+  selectedImage?: WriteSelectedImage
+}
+
+export type WriteSelectedImage = {
+  src: string
+  alt: string
+  /** Source-mode only: the document offsets of the image markdown line. */
+  line?: { from: number; to: number }
 }
 
 /**
@@ -148,7 +159,10 @@ function unionRects(rects: Array<{ left: number; right: number; top: number; bot
   }
 }
 
-function selectionAnchorRect(view: EditorView, ranges: WriteSelectionRange[]): WriteSelectionAnchorRect | undefined {
+function selectionAnchorRect(
+  view: EditorView,
+  ranges: Array<Pick<WriteSelectionRange, 'from' | 'to'>>
+): WriteSelectionAnchorRect | undefined {
   const rects: Array<{ left: number; right: number; top: number; bottom: number }> = []
   for (const range of ranges) {
     const start = view.coordsAtPos(range.from, 1)
@@ -183,12 +197,27 @@ function selectionState(view: EditorView): WriteEditorSelectionState {
 
   const text = ranges.map((range) => range.text).join('\n\n')
   const mainFrom = clampOffset(view.state, view.state.selection.main.from)
+  const mainLine = view.state.doc.lineAt(mainFrom)
+
+  // A bare caret on an image markdown line counts as selecting that image
+  // (clicking the live-preview image widget focuses its source line).
+  let selectedImage: WriteSelectedImage | undefined
+  if (ranges.length === 0 && view.state.selection.ranges.length === 1) {
+    const parsed = parseImageMarkdownLine(mainLine.text)
+    if (parsed && isSelectableRasterImageSrc(parsed.src)) {
+      selectedImage = { ...parsed, line: { from: mainLine.from, to: mainLine.to } }
+    }
+  }
+
   return {
     text,
     ranges,
     charCount: ranges.reduce((total, range) => total + range.charCount, 0),
-    anchorRect: selectionAnchorRect(view, ranges),
-    blockType: detectWriteBlockTypeFromLine(view.state.doc.lineAt(mainFrom).text)
+    anchorRect: selectedImage
+      ? selectionAnchorRect(view, [{ from: mainLine.from, to: mainLine.to }])
+      : selectionAnchorRect(view, ranges),
+    blockType: detectWriteBlockTypeFromLine(mainLine.text),
+    ...(selectedImage ? { selectedImage } : {})
   }
 }
 

@@ -64,6 +64,24 @@ describe('MessageTimelineEmptyHero — runtime offline hero (issue #78)', () => 
     expect(html).toContain('Retry')
     expect(html).toContain('Open Settings')
   })
+
+  it('plays the waking loading effects only while genuinely reconnecting', () => {
+    // Still probing: stage carries the is-waking modifier with the Zzz /
+    // sonar / caret decorations.
+    const waking = renderOfflineHero(null)
+    expect(waking).toContain('is-waking')
+    expect(waking).toContain('ds-runtime-wake-zzz')
+    expect(waking).toContain('ds-runtime-wake-sonar')
+    expect(waking).toContain('ds-runtime-wake-caret')
+
+    // Runtime error: same #78 principle as the title swap — an error state
+    // must not look like it is still loading, so the effects are dropped.
+    const errored = renderOfflineHero(i18n.t('common:runtimePortConflict'))
+    expect(errored).not.toContain('is-waking')
+    expect(errored).not.toContain('ds-runtime-wake-zzz')
+    expect(errored).not.toContain('ds-runtime-wake-sonar')
+    expect(errored).not.toContain('ds-runtime-wake-caret')
+  })
 })
 
 describe('MessageTimelineEmptyHero — runtime offline hero (issue #78, zh-CN)', () => {

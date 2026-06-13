@@ -19,6 +19,7 @@ function makeBaseState(): WriteWorkspaceState {
     previewMode: 'live',
     assistantOpen: true,
     assistantModel: 'auto',
+    assistantProviderId: '',
     loadWriteSettings: async () => undefined,
     selectWriteWorkspace: async () => undefined,
     addWriteWorkspace: async () => undefined,

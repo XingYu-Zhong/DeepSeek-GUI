@@ -141,7 +141,7 @@ export function ProcessSectionRow({
     sectionHasPendingApproval(section) ||
     (active && section.kind === 'reasoning') ||
     (processing && section.kind === 'execution' && sectionHasRequestUserInput(section))
-  const forceExpanded = sectionHasPendingApproval(section)
+  const forceExpanded = hasError || sectionHasPendingApproval(section)
   const expanded = hasDetails && (forceExpanded || (userExpanded ?? defaultExpanded))
   const title = describeProcessSection(section, t, {
     processing,
@@ -291,10 +291,10 @@ function ProcessStackRows({
         const canExpand = detail.kind !== 'none'
         const autoOpenRequestInput = processing && isRequestUserInputTool(block)
         const autoOpenPending = processBlockIsAutoOpenPending(block, processing) || isPendingApproval(block)
-        const forceOpen = autoOpenPending || autoOpenRequestInput
-        const open = canExpand && (processBlockHasError(block) || forceOpen || openBlockId === block.id)
-        const rowActive = processBlockIsActive(block, processing)
         const isError = processBlockHasError(block)
+        const forceOpen = isError || autoOpenPending || autoOpenRequestInput
+        const open = canExpand && (forceOpen || openBlockId === block.id)
+        const rowActive = processBlockIsActive(block, processing)
         const canToggle = canExpand && !forceOpen
         const handleToggle = (): void => {
           if (!canToggle) return
@@ -374,7 +374,7 @@ function ProcessEntryRow({
   const { verb, rest } = splitVerb(summary)
   const rowActive = isRunningTool || isAutoOpenPending || isStreamingAssistant
   const wrapSummary = (block.kind === 'system' && !canExpand) || isAssistantProcessText
-  const canToggle = canExpand && !isAutoOpenPending && !isAssistantProcessText
+  const canToggle = canExpand && !isAutoOpenPending && !isAssistantProcessText && !isError
   const handleToggle = (): void => {
     if (!canToggle) return
     setUserOpen((v) => !v)

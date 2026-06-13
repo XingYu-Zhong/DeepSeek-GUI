@@ -511,6 +511,52 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     expect(html).not.toContain('running timeline detail should stay collapsed')
   })
 
+  it('keeps completed runtime errors visible instead of folding them into the work summary', () => {
+    const blocks: ChatBlock[] = [
+      {
+        kind: 'user',
+        id: 'user_1',
+        text: 'draw this'
+      },
+      {
+        kind: 'system',
+        id: 'error_1',
+        text: 'model request failed with status 400',
+        detail: [
+          'Code: http_400',
+          '',
+          'Severity: error',
+          '',
+          'Message:',
+          'full provider body only visible in the expanded error detail'
+        ].join('\n'),
+        code: 'http_400',
+        severity: 'error'
+      }
+    ]
+    useChatStore.setState({
+      busy: false,
+      currentTurnUserId: null,
+      turnStartedAtByUserId: {}
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(MessageTimeline, {
+        blocks,
+        liveReasoning: '',
+        live: '',
+        activeThreadId: 'thr_1',
+        runtimeConnection: 'ready',
+        onRetryConnection: () => undefined,
+        onOpenSettings: () => undefined
+      })
+    )
+
+    expect(html).toContain('request failed with status 400')
+    expect(html).toContain('Code: http_400')
+    expect(html).toContain('full provider body only visible in the expanded error detail')
+  })
+
   it('adds extra bottom padding only for chat timelines with an active goal banner', () => {
     expect(goalTimelinePaddingClass('chat', true)).toBe('pb-32 md:pb-40')
     expect(goalTimelinePaddingClass('chat', false)).toBe('pb-10')

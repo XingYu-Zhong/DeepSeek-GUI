@@ -18,6 +18,7 @@ import { createWriteFileActions } from './write-workspace-file-actions'
 import { writeBrowserStorageItem } from '../lib/browser-storage'
 import {
   WRITE_ASSISTANT_MODEL_KEY,
+  WRITE_ASSISTANT_PROVIDER_KEY,
   WRITE_ASSISTANT_OPEN_KEY,
   WRITE_PREVIEW_MODE_KEY,
   commonPrefixLength,
@@ -29,6 +30,7 @@ import {
   pathsEqual,
   readStoredAssistantModel,
   readStoredAssistantOpen,
+  readStoredAssistantProviderId,
   readStoredPreviewMode,
   writeBasenameFromPath,
   writeJoinPath,
@@ -82,6 +84,7 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
   previewMode: readStoredPreviewMode(),
   assistantOpen: readStoredAssistantOpen(),
   assistantModel: readStoredAssistantModel(),
+  assistantProviderId: readStoredAssistantProviderId(),
 
   ...createWriteSettingsActions({ set, get }),
   ...createWriteFileActions({
@@ -316,10 +319,12 @@ export const useWriteWorkspaceStore = create<WriteWorkspaceState>((set, get) => 
     set({ assistantOpen: open })
   },
 
-  setAssistantModel: (model) => {
+  setAssistantModel: (model, providerId) => {
     const normalized = normalizeWriteAssistantModel(model)
     writeBrowserStorageItem(WRITE_ASSISTANT_MODEL_KEY, normalized)
-    set({ assistantModel: normalized })
+    const normalizedProviderId = providerId?.trim() ?? ''
+    writeBrowserStorageItem(WRITE_ASSISTANT_PROVIDER_KEY, normalizedProviderId)
+    set({ assistantModel: normalized, assistantProviderId: normalizedProviderId })
   },
 
   setSelection: (selection) => {

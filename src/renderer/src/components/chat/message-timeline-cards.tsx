@@ -307,7 +307,8 @@ export function WorkMetaRow({
   durationMs,
   reasoningDurationMs,
   expanded,
-  onToggle
+  onToggle,
+  collapsible = true
 }: {
   processing: boolean
   stepCount: number
@@ -315,6 +316,7 @@ export function WorkMetaRow({
   reasoningDurationMs?: number
   expanded: boolean
   onToggle: () => void
+  collapsible?: boolean
 }): ReactElement {
   const { t } = useTranslation('common')
 
@@ -331,6 +333,35 @@ export function WorkMetaRow({
     typeof reasoningDurationMs === 'number' &&
     reasoningDurationMs >= 1000
 
+  const content = (
+    <>
+      <span className={`tabular-nums ${processing ? 'ds-shiny-text' : ''}`}>{mainLabel}</span>
+      {showThoughtSuffix ? (
+        <span className="text-ds-faint">
+          · {t('thoughtFor', { duration: formatDuration(reasoningDurationMs!) })}
+        </span>
+      ) : null}
+      {collapsible ? (
+        expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-45" strokeWidth={1.8} />
+        ) : (
+          <ChevronRight
+            className="h-3.5 w-3.5 shrink-0 opacity-40 transition group-hover:opacity-65"
+            strokeWidth={1.8}
+          />
+        )
+      ) : null}
+    </>
+  )
+
+  if (!collapsible) {
+    return (
+      <div className="flex w-fit max-w-full items-center gap-1.5 rounded-md py-1 text-left text-[15px] font-medium text-ds-muted">
+        {content}
+      </div>
+    )
+  }
+
   return (
     <button
       type="button"
@@ -338,20 +369,7 @@ export function WorkMetaRow({
       aria-expanded={expanded}
       className="group flex w-fit max-w-full items-center gap-1.5 rounded-md py-1 text-left text-[15px] font-medium text-ds-muted transition hover:opacity-85"
     >
-      <span className={`tabular-nums ${processing ? 'ds-shiny-text' : ''}`}>{mainLabel}</span>
-      {showThoughtSuffix ? (
-        <span className="text-ds-faint">
-          · {t('thoughtFor', { duration: formatDuration(reasoningDurationMs!) })}
-        </span>
-      ) : null}
-      {expanded ? (
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-45" strokeWidth={1.8} />
-      ) : (
-        <ChevronRight
-          className="h-3.5 w-3.5 shrink-0 opacity-40 transition group-hover:opacity-65"
-          strokeWidth={1.8}
-        />
-      )}
+      {content}
     </button>
   )
 }

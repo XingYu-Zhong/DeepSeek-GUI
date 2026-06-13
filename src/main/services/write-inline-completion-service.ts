@@ -51,12 +51,12 @@ type AnthropicMessageResponse = {
   content?: Array<Record<string, unknown>>
 }
 
-export type ChatCompletionMessage = {
+type ChatCompletionMessage = {
   role: 'system' | 'user'
   content: string
 }
 
-export type WriteInlineProviderResponseFormat = ModelEndpointFormat | 'fim_completions'
+type WriteInlineProviderResponseFormat = ModelEndpointFormat | 'fim_completions'
 
 function shouldDisableThinkingForInlineCompletion(model: string): boolean {
   const normalized = model.trim().toLowerCase()
@@ -401,7 +401,7 @@ function debugPromptFromMessages(messages: ChatCompletionMessage[]): string {
     .join('\n\n')
 }
 
-export function compatibleModelEndpointUrl(baseUrl: string, endpointFormat: ModelEndpointFormat): string {
+function compatibleModelEndpointUrl(baseUrl: string, endpointFormat: ModelEndpointFormat): string {
   if (endpointFormat === 'chat_completions') return upstreamOpenAiChatCompletionsUrl(baseUrl)
   const path = modelEndpointPath(endpointFormat)
   const normalized = baseUrl.trim().replace(/\/+$/, '')
@@ -437,7 +437,7 @@ function isDeepSeekInlineCompletionBaseUrl(baseUrl: string): boolean {
   }
 }
 
-export function buildProviderHeaders(apiKey: string, responseFormat: WriteInlineProviderResponseFormat): Record<string, string> {
+function buildProviderHeaders(apiKey: string, responseFormat: WriteInlineProviderResponseFormat): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     Authorization: `Bearer ${apiKey}`,
@@ -466,7 +466,7 @@ function buildAnthropicMessages(messages: ChatCompletionMessage[]): {
   return { system: system.join('\n\n'), messages: out }
 }
 
-export function buildProviderRequestBody(input: {
+function buildProviderRequestBody(input: {
   responseFormat: WriteInlineProviderResponseFormat
   model: string
   messages: ChatCompletionMessage[] | null
@@ -514,7 +514,7 @@ export function buildProviderRequestBody(input: {
   }
 }
 
-export function providerTextFromResponse(
+function providerTextFromResponse(
   responseText: string,
   format: WriteInlineProviderResponseFormat = 'chat_completions'
 ): string {

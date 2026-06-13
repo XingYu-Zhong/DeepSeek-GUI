@@ -280,7 +280,7 @@ export class DeepseekCompatModelClient implements ModelClient {
   }
 
   private async classifyHttpError(status: number, text: string): Promise<{ message: string; code: string }> {
-    const body = text.slice(0, 500)
+    const body = text
     if (status === 429) {
       return {
         message: `model request was rate limited (HTTP 429): ${body}`,

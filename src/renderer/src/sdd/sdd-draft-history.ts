@@ -1,6 +1,6 @@
 import {
   SDD_DRAFT_FILE_NAME,
-  SDD_DRAFT_RELATIVE_DIR,
+  SDD_REQUIREMENTS_RELATIVE_DIR,
   buildSddDraftRelativePath,
   isSddDraftRelativePath,
   normalizeSddRelativePath
@@ -20,6 +20,7 @@ import {
 
 export type SddDraftHistoryItem = SddDraft & {
   title: string
+  searchText?: string
   source: 'remembered' | 'disk'
 }
 
@@ -57,10 +58,13 @@ function fallbackTitleForPath(relativePath: string): string {
 async function readDraftTitle(
   draft: SddDraft,
   readWorkspaceFile: ListSddDraftHistoryOptions['readWorkspaceFile']
-): Promise<{ title: string, absolutePath?: string }> {
+): Promise<{ title: string, absolutePath?: string, searchText?: string }> {
   const snapshot = readRememberedSddDraftContent(draft)
   if (snapshot?.content) {
-    return { title: titleFromSddDraftContent(snapshot.content, fallbackTitleForPath(draft.relativePath)) }
+    return {
+      title: titleFromSddDraftContent(snapshot.content, fallbackTitleForPath(draft.relativePath)),
+      searchText: snapshot.content
+    }
   }
 
   const result = await readWorkspaceFile({
@@ -72,7 +76,8 @@ async function readDraftTitle(
   }
   return {
     title: titleFromSddDraftContent(result.content, fallbackTitleForPath(draft.relativePath)),
-    absolutePath: result.path
+    absolutePath: result.path,
+    searchText: result.content
   }
 }
 
@@ -86,7 +91,7 @@ async function discoverDiskDrafts({
 
   const root = await listWorkspaceDirectory({
     workspaceRoot: normalizedWorkspace,
-    path: SDD_DRAFT_RELATIVE_DIR
+    path: SDD_REQUIREMENTS_RELATIVE_DIR
   })
   if (!root.ok) return []
 
@@ -98,7 +103,7 @@ async function discoverDiskDrafts({
 
     const folder = await listWorkspaceDirectory({
       workspaceRoot: normalizedWorkspace,
-      path: `${SDD_DRAFT_RELATIVE_DIR}/${entry.name}`
+      path: `${SDD_REQUIREMENTS_RELATIVE_DIR}/${entry.name}`
     })
     if (!folder.ok) continue
     const requirement = folder.entries.find((item) => item.type === 'file' && item.name === SDD_DRAFT_FILE_NAME)
@@ -149,6 +154,7 @@ export async function listSddDraftHistory({
       return {
         ...draft,
         absolutePath: title.absolutePath ?? draft.absolutePath,
+        ...(title.searchText ? { searchText: title.searchText } : {}),
         title: title.title
       }
     })

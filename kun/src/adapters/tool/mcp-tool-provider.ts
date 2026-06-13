@@ -640,10 +640,10 @@ function isBareCommand(command: string): boolean {
 
 function missingBareCommandHint(command: string): string {
   if (process.platform === 'win32') {
-    return `Could not find "${command}" on PATH while starting the MCP server. Make sure Node/npm is installed and available to DeepSeek GUI, or set the MCP command to an absolute path.`
+    return `Could not find "${command}" on PATH while starting the MCP server. Make sure Node/npm is installed and available to Kun, or set the MCP command to an absolute path.`
   }
   if (process.platform === 'darwin') {
-    return `Could not find "${command}" on PATH while starting the MCP server. If DeepSeek GUI was launched from Finder or the desktop, make sure Node/npm is installed and available to GUI apps, or set the MCP command to an absolute path such as /opt/homebrew/bin/${command}.`
+    return `Could not find "${command}" on PATH while starting the MCP server. If Kun was launched from Finder or the desktop, make sure Node/npm is installed and available to GUI apps, or set the MCP command to an absolute path such as /opt/homebrew/bin/${command}.`
   }
-  return `Could not find "${command}" on PATH while starting the MCP server. Make sure Node/npm is installed and available to DeepSeek GUI, or set the MCP command to an absolute path such as /usr/local/bin/${command}.`
+  return `Could not find "${command}" on PATH while starting the MCP server. Make sure Node/npm is installed and available to Kun, or set the MCP command to an absolute path such as /usr/local/bin/${command}.`
 }

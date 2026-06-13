@@ -29,6 +29,10 @@ export type InitialSetupSelection = {
   mode: InitialSetupAccessMode
 }
 
+export const INITIAL_SETUP_PROVIDER_PRESETS = MODEL_PROVIDER_PRESETS.filter(
+  (preset) => preset.id !== 'litellm'
+)
+
 export function initialSetupProfileId(selection: InitialSetupSelection): string {
   if (selection.presetId === DEFAULT_MODEL_PROVIDER_ID) return DEFAULT_MODEL_PROVIDER_ID
   return selection.mode === 'token-plan' ? tokenPlanProviderId(selection.presetId) : selection.presetId
@@ -41,7 +45,7 @@ export function initialSetupDrafts(settings: AppSettingsV1): InitialSetupDrafts 
   const drafts: InitialSetupDrafts = {
     [DEFAULT_MODEL_PROVIDER_ID]: { apiKey: provider.apiKey, baseUrl: provider.baseUrl }
   }
-  for (const preset of MODEL_PROVIDER_PRESETS) {
+  for (const preset of INITIAL_SETUP_PROVIDER_PRESETS) {
     const existing = byId.get(preset.id)
     drafts[preset.id] = {
       apiKey: existing?.apiKey ?? '',
@@ -61,7 +65,7 @@ export function initialSetupDrafts(settings: AppSettingsV1): InitialSetupDrafts 
 /** Card and mode to preselect: the active provider when it is one of ours, DeepSeek otherwise. */
 export function initialSetupSelection(settings: AppSettingsV1): InitialSetupSelection {
   const activeId = getKunRuntimeSettings(settings).providerId.trim()
-  for (const preset of MODEL_PROVIDER_PRESETS) {
+  for (const preset of INITIAL_SETUP_PROVIDER_PRESETS) {
     if (activeId === preset.id) return { presetId: preset.id, mode: 'api' }
     if (preset.tokenPlan && activeId === tokenPlanProviderId(preset.id)) {
       return { presetId: preset.id, mode: 'token-plan' }
@@ -89,7 +93,7 @@ export function initialSetupAutoWirePlan(
   const speechUnconfigured = !runtime.speechToText.enabled && !runtime.speechToText.providerId.trim()
   const imageUnconfigured = !runtime.imageGeneration.enabled && !runtime.imageGeneration.providerId.trim()
   const plan: InitialSetupAutoWirePlan = { speechProviderId: '', imageProviderId: '' }
-  for (const preset of MODEL_PROVIDER_PRESETS) {
+  for (const preset of INITIAL_SETUP_PROVIDER_PRESETS) {
     const apiKeyFilled = Boolean(drafts[preset.id]?.apiKey.trim())
     const tokenPlanKeyFilled = Boolean(
       preset.tokenPlan && drafts[tokenPlanProviderId(preset.id)]?.apiKey.trim()
@@ -137,7 +141,7 @@ export function buildInitialSetupSettings(
     })
   }
 
-  for (const preset of MODEL_PROVIDER_PRESETS) {
+  for (const preset of INITIAL_SETUP_PROVIDER_PRESETS) {
     upsertPresetProfile(profiles, preset.id, drafts[preset.id], (apiKey, baseUrl) => ({
       ...modelProviderPresetProfile(preset, apiKey),
       ...(baseUrl ? { baseUrl } : {})
@@ -209,5 +213,5 @@ function mergeModelIds(primary: readonly string[], secondary: readonly string[])
 }
 
 export function presetForInitialSetup(presetId: string): ModelProviderPreset | null {
-  return MODEL_PROVIDER_PRESETS.find((preset) => preset.id === presetId) ?? null
+  return INITIAL_SETUP_PROVIDER_PRESETS.find((preset) => preset.id === presetId) ?? null
 }

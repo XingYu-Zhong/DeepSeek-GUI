@@ -10,6 +10,7 @@ import {
 import { createAppActions } from './chat-store-app-actions'
 
 const COMPOSER_MODEL_STORAGE_KEY = 'kun.composerModel'
+const COMPOSER_PROVIDER_STORAGE_KEY = 'kun.composerProviderId'
 
 function createMemoryStorage(): Storage {
   const items = new Map<string, string>()
@@ -39,6 +40,7 @@ function buildHarness(fetchModelsResult: FetchModelsResult): {
 } {
   let state = {
     composerModel: '',
+    composerProviderId: '',
     composerPickList: mergeComposerPickList(false, []),
     composerModelGroups: []
   } as unknown as ChatState
@@ -51,7 +53,8 @@ function buildHarness(fetchModelsResult: FetchModelsResult): {
 
   vi.stubGlobal('window', {
     kunGui: {
-      fetchUpstreamModels: vi.fn(async () => fetchModelsResult)
+      fetchUpstreamModels: vi.fn(async () => fetchModelsResult),
+      saveSettingsSilent: vi.fn(async () => state)
     }
   })
 
@@ -103,7 +106,36 @@ describe('chat-store app actions composer model loading', () => {
     await actions.loadComposerModels()
 
     expect(state.composerModel).toBe('MiniMax-M2')
+    expect(state.composerProviderId).toBe('minimax')
     expect(localStorage.getItem(COMPOSER_MODEL_STORAGE_KEY)).toBe('MiniMax-M2')
+    expect(localStorage.getItem(COMPOSER_PROVIDER_STORAGE_KEY)).toBe('minimax')
+  })
+
+  it('updates the composer provider when the picker supplies a provider id', () => {
+    const { actions, state } = buildHarness({
+      ok: true,
+      modelIds: ['MiniMax-M2'],
+      defaultModelId: 'deepseek-v4-pro',
+      modelGroups: [{
+        providerId: 'minimax',
+        label: 'MiniMax',
+        modelIds: ['MiniMax-M2']
+      }]
+    })
+    state.composerModelGroups = [{
+      providerId: 'minimax',
+      label: 'MiniMax',
+      modelIds: ['MiniMax-M2']
+    }]
+
+    actions.setComposerModel('MiniMax-M2', 'minimax')
+
+    expect(state.composerModel).toBe('MiniMax-M2')
+    expect(state.composerProviderId).toBe('minimax')
+    expect(localStorage.getItem(COMPOSER_PROVIDER_STORAGE_KEY)).toBe('minimax')
+    expect(window.kunGui.saveSettingsSilent).toHaveBeenCalledWith({
+      agents: { kun: { model: 'MiniMax-M2' } }
+    })
   })
 
   it('does not overwrite a stored custom model when only fallback models are available', async () => {

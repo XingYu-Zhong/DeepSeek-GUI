@@ -5,7 +5,9 @@ import type { SddDraft } from './sdd-draft-store'
 const SDD_THREAD_REGISTRY_KEY = 'kun.sdd.threadRegistry.v1'
 const MAX_SDD_THREAD_RECORDS = 100
 const MAX_SDD_THREAD_IDS_PER_DRAFT = 20
-const SDD_DRAFT_PATH_FRAGMENT = '.kunsdd/draft/'
+// Both layouts: retired pre-unit drafts (.kunsdd/draft/) still have threads
+// in the runtime and must stay hidden from the chat sidebar.
+const SDD_DRAFT_PATH_FRAGMENTS = ['.kunsdd/draft/', '.kunsdd/requirements/']
 
 export type SddThreadRecord = {
   draftId: string
@@ -252,6 +254,7 @@ export function isSddAssistantThread(
 
 function looksLikeLegacySddAssistantThread(thread: SddThreadLike): boolean {
   return [thread.workspace, thread.title, thread.preview].some((value) =>
-    typeof value === 'string' && value.replaceAll('\\', '/').includes(SDD_DRAFT_PATH_FRAGMENT)
+    typeof value === 'string' &&
+    SDD_DRAFT_PATH_FRAGMENTS.some((fragment) => value.replaceAll('\\', '/').includes(fragment))
   )
 }

@@ -104,11 +104,13 @@ type Props = {
   runtimeReady: boolean
   hasActiveThread: boolean
   composerModel: string
+  composerProviderId?: string
   composerPickList: string[]
   composerModelGroups?: ModelProviderModelGroup[]
   composerReasoningEffort?: string
-  onComposerModelChange: (modelId: string) => void
+  onComposerModelChange: (modelId: string, providerId?: string) => void
   onComposerReasoningEffortChange?: (effort: ComposerReasoningEffort) => void
+  onConfigureProviders?: () => void
   hideModelPicker?: boolean
   modelPickerMode?: 'select' | 'combobox'
   queuedMessages: QueuedComposerMessage[]
@@ -559,11 +561,13 @@ export function FloatingComposer({
   runtimeReady,
   hasActiveThread,
   composerModel,
+  composerProviderId,
   composerPickList,
   composerModelGroups = EMPTY_MODEL_GROUPS,
   composerReasoningEffort,
   onComposerModelChange,
   onComposerReasoningEffortChange,
+  onConfigureProviders,
   hideModelPicker = false,
   modelPickerMode = 'select',
   queuedMessages,
@@ -2042,6 +2046,7 @@ export function FloatingComposer({
                   compact={compact}
                   mode={modelPickerMode}
                   composerModel={composerModel}
+                  composerProviderId={composerProviderId}
                   composerPickList={composerPickList}
                   composerModelGroups={composerModelGroups}
                   composerReasoningEffort={composerReasoningEffort}
@@ -2049,6 +2054,7 @@ export function FloatingComposer({
                   stretch={stretchModelPicker}
                   onComposerModelChange={onComposerModelChange}
                   onComposerReasoningEffortChange={onComposerReasoningEffortChange}
+                  onConfigureProviders={onConfigureProviders}
                 />
               )}
               {showVoiceDictation ? (

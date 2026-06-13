@@ -1,5 +1,6 @@
 import type { ChatBlock, NormalizedThread } from '../agent/types'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '@shared/default-composer-models'
+import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
 import {
   CLAW_MANAGED_INSTRUCTIONS_HEADING,
   CLAW_MODEL_IDS,
@@ -19,6 +20,7 @@ import {
 import { readBrowserStorageItem, writeBrowserStorageItem } from '../lib/browser-storage'
 
 const COMPOSER_MODEL_STORAGE_KEY = 'kun.composerModel'
+const COMPOSER_PROVIDER_STORAGE_KEY = 'kun.composerProviderId'
 const TURN_MODEL_STORAGE_KEY = 'kun.turnModelLabel'
 const CODE_WORKSPACE_ROOTS_STORAGE_KEY = 'kun.codeWorkspaceRoots.v1'
 export const MAX_CODE_WORKSPACE_ROOTS = 30
@@ -38,6 +40,48 @@ export function persistComposerModel(model: string): void {
   writeBrowserStorageItem(COMPOSER_MODEL_STORAGE_KEY, model)
 }
 
+export function readStoredComposerProviderId(
+  modelGroups: readonly ModelProviderModelGroup[],
+  modelId: string
+): string {
+  const raw = readBrowserStorageItem(COMPOSER_PROVIDER_STORAGE_KEY)
+  const providerId = raw?.trim() ?? ''
+  if (!providerId) return ''
+  const group = modelGroups.find((item) => item.providerId === providerId)
+  if (!group) return ''
+  const model = modelId.trim()
+  if (!model) return providerId
+  return modelGroupHasModel(group, model) ? providerId : ''
+}
+
+export function persistComposerProviderId(providerId: string): void {
+  const normalized = providerId.trim()
+  if (normalized) {
+    writeBrowserStorageItem(COMPOSER_PROVIDER_STORAGE_KEY, normalized)
+  } else {
+    writeBrowserStorageItem(COMPOSER_PROVIDER_STORAGE_KEY, '')
+  }
+}
+
+export function providerIdForComposerModel(
+  modelGroups: readonly ModelProviderModelGroup[],
+  modelId: string
+): string {
+  const model = modelId.trim()
+  if (!model) return ''
+  return modelGroups.find((group) => modelGroupHasModel(group, model))?.providerId ?? ''
+}
+
+function modelGroupHasModel(group: ModelProviderModelGroup, modelId: string): boolean {
+  const normalized = normalizeComposerModelId(modelId)
+  if (!normalized) return false
+  return group.modelIds.some((id) => normalizeComposerModelId(id) === normalized)
+}
+
+function normalizeComposerModelId(modelId: string): string {
+  return modelId.trim().toLowerCase()
+}
+
 export function compactCodeWorkspaceRoots(workspaceRoots: readonly (string | undefined | null)[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -53,6 +97,46 @@ export function compactCodeWorkspaceRoots(workspaceRoots: readonly (string | und
     out.push(normalized)
   }
   return out.slice(0, MAX_CODE_WORKSPACE_ROOTS)
+}
+
+function workspaceIdentityKeySet(workspaceRoots: readonly (string | undefined | null)[]): Set<string> {
+  const keys = new Set<string>()
+  for (const workspaceRoot of workspaceRoots) {
+    const key = workspaceRootIdentityKey(normalizeWorkspaceRoot(workspaceRoot ?? ''))
+    if (key) keys.add(key)
+  }
+  return keys
+}
+
+export function reconcileCodeWorkspaceRoots(options: {
+  currentRoots: readonly (string | undefined | null)[]
+  codeThreadWorkspaceRoots: readonly (string | undefined | null)[]
+  writeWorkspaceRoots: readonly (string | undefined | null)[]
+  preservedWorkspaceRoots?: readonly (string | undefined | null)[]
+}): string[] {
+  const writeKeys = workspaceIdentityKeySet(options.writeWorkspaceRoots)
+  if (writeKeys.size === 0) {
+    return compactCodeWorkspaceRoots([
+      ...options.codeThreadWorkspaceRoots,
+      ...options.currentRoots,
+      ...(options.preservedWorkspaceRoots ?? [])
+    ])
+  }
+
+  const codeThreadKeys = workspaceIdentityKeySet(options.codeThreadWorkspaceRoots)
+  const preservedKeys = workspaceIdentityKeySet(options.preservedWorkspaceRoots ?? [])
+  const retainedCurrentRoots = options.currentRoots.filter((workspaceRoot) => {
+    const key = workspaceRootIdentityKey(normalizeWorkspaceRoot(workspaceRoot ?? ''))
+    if (!key) return false
+    if (!writeKeys.has(key)) return true
+    return codeThreadKeys.has(key) || preservedKeys.has(key)
+  })
+
+  return compactCodeWorkspaceRoots([
+    ...options.codeThreadWorkspaceRoots,
+    ...retainedCurrentRoots,
+    ...(options.preservedWorkspaceRoots ?? [])
+  ])
 }
 
 export function readCodeWorkspaceRoots(): string[] {

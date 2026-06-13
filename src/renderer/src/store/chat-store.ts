@@ -151,6 +151,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   turnReasoningLastAtByUserId: {},
   inspectorSelectedId: null,
   composerModel: '',
+  composerProviderId: '',
   composerPickList: mergeComposerPickList(false, []),
   composerModelGroups: [],
   queuedMessages: [],

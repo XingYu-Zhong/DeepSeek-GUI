@@ -1004,25 +1004,18 @@ export async function resolveAvailableKunPort(
  * holding the configured port. Only processes whose command line looks
  * like our serve entry are touched; anything else keeps the port and we
  * fall back to allocating a different one.
+ *
+ * Safe by construction on every platform: any failure to positively
+ * identify the holder as our own serve-entry leaves it untouched and the
+ * caller allocates a different port instead.
  */
 async function killStaleKunOnPort(port: number): Promise<boolean> {
-  if (process.platform === 'win32') return false
-  let pids: number[] = []
-  try {
-    const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'])
-    pids = stdout
-      .split('\n')
-      .map((line) => Number(line.trim()))
-      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
-  } catch {
-    return false
-  }
+  const pids = await listListeningPidsOnPort(port)
   let reclaimed = false
   for (const pid of pids) {
     let command = ''
     try {
-      const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'command='])
-      command = stdout.trim()
+      command = await processCommandLine(pid)
     } catch {
       continue
     }
@@ -1031,22 +1024,106 @@ async function killStaleKunOnPort(port: number): Promise<boolean> {
       'kun',
       formatKunLogLine('lifecycle', pid, `killing stale kun process holding port ${port}`)
     )
-    try {
-      process.kill(pid, 'SIGTERM')
-    } catch {
-      continue
-    }
-    if (!(await waitForPidExit(pid, 2_000))) {
-      try {
-        process.kill(pid, 'SIGKILL')
-      } catch {
-        /* already gone */
-      }
-      await waitForPidExit(pid, 1_000)
-    }
-    reclaimed = true
+    if (await terminateStalePid(pid)) reclaimed = true
   }
   return reclaimed
+}
+
+/**
+ * PIDs listening on `port`, excluding our own process. Uses `lsof` on
+ * macOS/Linux and `netstat -ano` on Windows.
+ */
+async function listListeningPidsOnPort(port: number): Promise<number[]> {
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await execFileAsync('netstat', ['-ano'], {
+        windowsHide: true,
+        timeout: 5_000,
+        maxBuffer: 8 * 1024 * 1024
+      })
+      return parseListeningPidsFromNetstat(stdout, port)
+    } catch {
+      return []
+    }
+  }
+  try {
+    const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'])
+    return stdout
+      .split('\n')
+      .map((line) => Number(line.trim()))
+      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Parse `netstat -ano` output into the PIDs holding a LISTENING TCP socket
+ * on `port`. Columns are `Proto  Local  Foreign  State  PID`; UDP rows
+ * (no State column) and non-matching ports are ignored. Matches both IPv4
+ * (`127.0.0.1:<port>`) and IPv6 (`[::1]:<port>`) local addresses.
+ */
+export function parseListeningPidsFromNetstat(stdout: string, port: number): number[] {
+  const pids = new Set<number>()
+  for (const raw of stdout.split(/\r?\n/)) {
+    const cols = raw.trim().split(/\s+/)
+    if (cols.length < 5 || cols[0].toUpperCase() !== 'TCP') continue
+    if (cols[3].toUpperCase() !== 'LISTENING') continue
+    if (!cols[1].endsWith(`:${port}`)) continue
+    const pid = Number(cols[cols.length - 1])
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) pids.add(pid)
+  }
+  return [...pids]
+}
+
+/** Read a process's full command line (best effort, platform-specific). */
+async function processCommandLine(pid: number): Promise<string> {
+  if (process.platform === 'win32') {
+    const { stdout } = await execFileAsync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine`
+      ],
+      { windowsHide: true, timeout: 5_000 }
+    )
+    return stdout.trim()
+  }
+  const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'command='])
+  return stdout.trim()
+}
+
+/** Terminate a positively-identified stale kun process. */
+async function terminateStalePid(pid: number): Promise<boolean> {
+  if (process.platform === 'win32') {
+    try {
+      await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        timeout: 5_000
+      })
+      return true
+    } catch {
+      // taskkill exits non-zero when the PID is already gone — treat the
+      // port as reclaimed only if the process really is no longer alive.
+      return await waitForPidExit(pid, 0)
+    }
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return false
+  }
+  if (!(await waitForPidExit(pid, 2_000))) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
+    await waitForPidExit(pid, 1_000)
+  }
+  return true
 }
 
 async function waitForPidExit(pid: number, timeoutMs: number): Promise<boolean> {

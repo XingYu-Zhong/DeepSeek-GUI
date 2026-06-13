@@ -16,6 +16,25 @@ import { defaultEditLocalToolOperations, defaultWriteLocalToolOperations } from 
 import { parseEditInstructions, resolveWorkspacePath, withToolBoundary } from './builtin-tool-utils.js'
 import { assertCanWritePath } from './sandbox-policy.js'
 
+/**
+ * Arguments that failed JSON parsing arrive as `{ __raw: "<partial json>" }`
+ * (tool-argument-repair fallback). The dominant cause is the model's output
+ * limit truncating an oversized payload mid-string, so answer with guidance
+ * the model can act on instead of a generic missing-field error.
+ */
+function truncatedArgumentsError(raw: unknown): { output: { error: string }; isError: true } | null {
+  if (typeof raw !== 'string') return null
+  return {
+    output: {
+      error:
+        'tool arguments were not valid JSON — they were likely truncated by your output limit. ' +
+        `Received ${raw.length} characters. Retry with a much smaller payload: ` +
+        'write a short skeleton first, then extend the file with several small edit calls.'
+    },
+    isError: true
+  }
+}
+
 export function createWriteLocalTool(_options: WriteLocalToolOptions = {}): LocalTool {
   const mkdirOp = _options.operations?.mkdir ?? defaultWriteLocalToolOperations.mkdir!
   const writeFileOp = _options.operations?.writeFile ?? defaultWriteLocalToolOperations.writeFile!
@@ -34,6 +53,8 @@ export function createWriteLocalTool(_options: WriteLocalToolOptions = {}): Loca
     policy: 'on-request',
     toolKind: 'file_change',
     execute: async (args, context) => withToolBoundary(async () => {
+      const truncated = truncatedArgumentsError(args.__raw)
+      if (truncated) return truncated
       const rawPath = typeof args.path === 'string' ? args.path : ''
       const content = typeof args.content === 'string' ? args.content : null
       if (!rawPath.trim() || content == null) {
@@ -90,6 +111,8 @@ export function createEditLocalTool(_options: EditLocalToolOptions = {}): LocalT
     policy: 'on-request',
     toolKind: 'file_change',
     execute: async (args, context) => withToolBoundary(async () => {
+      const truncated = truncatedArgumentsError(args.__raw)
+      if (truncated) return truncated
       const rawPath = typeof args.path === 'string' ? args.path : ''
       const edits = parseEditInstructions(args)
       if (!rawPath.trim() || edits.length === 0) {

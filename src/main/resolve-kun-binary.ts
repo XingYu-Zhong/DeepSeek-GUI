@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 /**
  * Resolve the Kun executable. Kun ships as a TypeScript
- * package inside the DeepSeek-GUI workspace (`kun/`) and is
+ * package inside the Kun workspace (`kun/`) and is
  * executed through the bundled Node.js runtime that Electron carries.
  *
  * Resolution order:

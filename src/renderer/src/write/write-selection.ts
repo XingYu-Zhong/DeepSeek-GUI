@@ -1,9 +1,24 @@
 import type {
   WriteEditorSelectionState,
+  WriteSelectedImage,
   WriteSelectionAnchorRect,
   WriteSelectionPageRect,
   WriteSelectionRange
 } from '../components/write/WriteMarkdownEditor'
+
+function selectedImagesEqual(
+  a: WriteSelectedImage | undefined,
+  b: WriteSelectedImage | undefined
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.src === b.src &&
+    a.alt === b.alt &&
+    a.line?.from === b.line?.from &&
+    a.line?.to === b.line?.to
+  )
+}
 
 function anchorRectsEqual(
   a: WriteSelectionAnchorRect | undefined,
@@ -70,6 +85,7 @@ export function writeSelectionStatesEqual(
   if (a.charCount !== b.charCount || a.text !== b.text) return false
   if (a.blockType !== b.blockType) return false
   if (a.sourceKind !== b.sourceKind || a.pageStart !== b.pageStart || a.pageEnd !== b.pageEnd) return false
+  if (!selectedImagesEqual(a.selectedImage, b.selectedImage)) return false
   if (a.ranges.length !== b.ranges.length) return false
   for (let index = 0; index < a.ranges.length; index += 1) {
     if (!rangesEqual(a.ranges[index], b.ranges[index])) return false

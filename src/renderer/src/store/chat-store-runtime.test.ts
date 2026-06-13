@@ -176,6 +176,45 @@ describe('thread event sink runtime errors', () => {
     expect(systemBlocks[0].detail).not.toContain('secret-token')
   })
 
+  it('deduplicates matching runtime error and turn failure events inside one turn', () => {
+    const { getState, set, get } = makeSinkHarness({
+      activeThreadId: 'thread-current',
+      busy: true,
+      blocks: [{ kind: 'user', id: 'user-current', text: 'draw a poster' }]
+    })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+    const message = `model request failed with status 400: ${JSON.stringify({
+      error: {
+        code: '400',
+        message: `Not supported model ${'mimo-v2.5-pro-ultraspeed'.repeat(10)}`
+      }
+    })}`
+
+    sink.onRuntimeError?.({
+      itemId: 'runtime_error_turn-current',
+      createdAt: '2026-06-08T00:00:00.000Z',
+      message,
+      code: 'http_400',
+      severity: 'error'
+    })
+    sink.onRuntimeError?.({
+      itemId: 'item_turn-current_error',
+      createdAt: '2026-06-08T00:00:01.000Z',
+      message,
+      code: 'http_400',
+      severity: 'error'
+    })
+
+    const systemBlocks = getState().blocks.filter((block) => block.kind === 'system')
+    expect(systemBlocks).toHaveLength(1)
+    expect(systemBlocks[0]).toMatchObject({
+      id: 'item_turn-current_error',
+      code: 'http_400',
+      severity: 'error'
+    })
+    expect(systemBlocks[0].detail).toContain(`Message:\n${message}`)
+  })
+
   it('does not keep an aborted turn busy after interrupt', () => {
     const blocks: ChatBlock[] = [
       { kind: 'user', id: 'user-1', text: 'run command' },

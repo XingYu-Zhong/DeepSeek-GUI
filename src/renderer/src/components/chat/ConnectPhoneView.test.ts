@@ -171,4 +171,20 @@ describe('ConnectPhoneView', () => {
     expect(html).toContain('Phone connection settings')
     expect(html).toContain('Disconnect phone')
   })
+
+  it('keeps the IM list above the phone connection panel in the sidebar', () => {
+    const html = renderToStaticMarkup(
+      createElement(ConnectPhoneSidebarPanel, {
+        channels: [channel(true, 'feishu'), channel(true, 'weixin')],
+        onAddProvider: async () => undefined,
+        onDisconnect: async () => undefined,
+        onOpenSettings: () => undefined
+      })
+    )
+
+    expect(html).toContain('IM')
+    expect(html).toContain('Connect phone')
+    expect(html).toContain('Feishu / Lark')
+    expect(html).toContain('WeChat')
+  })
 })

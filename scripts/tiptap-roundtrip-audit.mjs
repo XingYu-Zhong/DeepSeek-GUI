@@ -12,8 +12,9 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'out', 'release', 'build', '.git', 'vendor'])
 const verbose = process.argv.includes('--verbose')
 const sampleArg = process.argv.indexOf('--sample')

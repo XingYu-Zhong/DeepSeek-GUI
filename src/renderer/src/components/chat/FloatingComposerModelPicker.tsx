@@ -25,6 +25,7 @@ import {
   type ModelReasoningEffort,
   type ModelProviderModelProfileV1
 } from '@shared/app-settings'
+import { DEFAULT_COMPOSER_MODEL_IDS } from '@shared/default-composer-models'
 import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
 
 export type ComposerReasoningEffort = ModelReasoningEffort
@@ -33,13 +34,15 @@ type Props = {
   compact: boolean
   mode: 'select' | 'combobox'
   composerModel: string
+  composerProviderId?: string
   composerPickList: string[]
   composerModelGroups?: ModelProviderModelGroup[]
   canChangeModel: boolean
   stretch?: boolean
   composerReasoningEffort?: string
-  onComposerModelChange: (modelId: string) => void
+  onComposerModelChange: (modelId: string, providerId?: string) => void
   onComposerReasoningEffortChange?: (effort: ComposerReasoningEffort) => void
+  onConfigureProviders?: () => void
 }
 
 const REASONING_OPTIONS: Array<{ id: ComposerReasoningEffort; labelKey: string }> = [
@@ -87,18 +90,23 @@ const FLOATING_SUBMENU_WIDTH = 232
 const FLOATING_SUBMENU_MIN_HEIGHT = 80
 const FLOATING_SUBMENU_MAX_HEIGHT = 320
 const UNGROUPED_MODEL_PROVIDER_ID = '__composer_models__'
+const DEFAULT_COMPOSER_MODEL_KEYS = new Set(
+  DEFAULT_COMPOSER_MODEL_IDS.map((id) => normalizeModelCapabilityKey(id))
+)
 
 export function FloatingComposerModelPicker({
   compact,
   mode,
   composerModel,
+  composerProviderId = '',
   composerPickList,
   composerModelGroups = [],
   canChangeModel,
   stretch = false,
   composerReasoningEffort = 'max',
   onComposerModelChange,
-  onComposerReasoningEffortChange
+  onComposerReasoningEffortChange,
+  onConfigureProviders
 }: Props): ReactElement {
   const { t } = useTranslation('common')
   const pickerRef = useRef<HTMLElement | null>(null)
@@ -127,18 +135,27 @@ export function FloatingComposerModelPicker({
     })
   }, [composerModelGroups, modelOptions, t])
   const currentModel = composerModel.trim()
-  const selectedProviderId = providerMenuGroups.find((group) =>
+  const selectedProviderGroup = providerMenuGroups.find((group) =>
+    group.providerId === composerProviderId.trim() &&
+    group.modelIds.some((id) => modelIdsMatch(id, currentModel))
+  ) ?? null
+  const selectedProviderId = selectedProviderGroup?.providerId ?? providerMenuGroups.find((group) =>
     group.modelIds.some((id) => modelIdsMatch(id, currentModel))
   )?.providerId ?? null
-  const currentModelProfile = modelProfileForSelection(providerMenuGroups, currentModel)
+  const currentModelProfile = modelProfileForSelection(providerMenuGroups, currentModel, selectedProviderId)
+  const needsProviderSetup = shouldShowProviderSetupPrompt(providerMenuGroups)
   const reasoningOptions = reasoningOptionsForModel(currentModelProfile)
-  const reasoningEnabled = Boolean(onComposerReasoningEffortChange) && reasoningOptions.length > 0
+  const reasoningEnabled =
+    !needsProviderSetup && Boolean(onComposerReasoningEffortChange) && reasoningOptions.length > 0
   const currentReasoning = normalizeComposerReasoningEffort(
     composerReasoningEffort,
     currentModelProfile
   )
   const currentReasoningLabel = t(reasoningLabelKey(currentReasoning))
-  const modelLabel = fullModelLabel(composerModel, t('autoLabel'))
+  const canOpenModelControls = canChangeModel || (needsProviderSetup && Boolean(onConfigureProviders))
+  const modelLabel = needsProviderSetup
+    ? t('composerNoProvidersShort')
+    : fullModelLabel(composerModel, t('autoLabel'))
   const controlsTitle = reasoningEnabled
     ? `${modelLabel} / ${currentReasoningLabel}`
     : modelLabel
@@ -284,7 +301,7 @@ export function FloatingComposerModelPicker({
       }
 
   const renderMenu = (className: string): ReactElement | null => {
-    if (!menuOpen || !canChangeModel) return null
+    if (!menuOpen || !canOpenModelControls) return null
     const menu = (
       <>
         <div
@@ -293,53 +310,73 @@ export function FloatingComposerModelPicker({
           style={menuStyle}
           className={className}
         >
-        {reasoningEnabled ? (
-          <>
-            <MenuSectionTitle icon={<Brain className="h-3.5 w-3.5" strokeWidth={1.9} />}>
-              {t('composerReasoning')}
-            </MenuSectionTitle>
-            <div className="flex flex-col gap-1">
-              {reasoningOptions.map((option) => (
-                <PickerRow
-                  key={option.id}
-                  selected={currentReasoning === option.id}
-                  title={t(option.labelKey)}
-                  onClick={() => {
-                    onComposerReasoningEffortChange?.(option.id)
-                    setMenuOpen(false)
-                  }}
-                />
-              ))}
-            </div>
-            <MenuSeparator />
-          </>
-        ) : null}
+          {reasoningEnabled && !needsProviderSetup ? (
+            <>
+              <MenuSectionTitle icon={<Brain className="h-3.5 w-3.5" strokeWidth={1.9} />}>
+                {t('composerReasoning')}
+              </MenuSectionTitle>
+              <div className="flex flex-col gap-1">
+                {reasoningOptions.map((option) => (
+                  <PickerRow
+                    key={option.id}
+                    selected={currentReasoning === option.id}
+                    title={t(option.labelKey)}
+                    onClick={() => {
+                      onComposerReasoningEffortChange?.(option.id)
+                      setMenuOpen(false)
+                    }}
+                  />
+                ))}
+              </div>
+              <MenuSeparator />
+            </>
+          ) : null}
 
-        <MenuSectionTitle icon={<Gauge className="h-3.5 w-3.5" strokeWidth={1.9} />}>
-          {t('composerModel')}
-        </MenuSectionTitle>
-        <div className="pr-0.5">
-          {providerMenuGroups.map((group) => {
-            const selectedModel = group.modelIds.some((id) => modelIdsMatch(id, currentModel))
-              ? currentModel
-              : ''
-            return (
-              <ProviderRow
-                key={group.providerId}
-                refNode={(node) => {
-                  if (node) providerRowRefs.current.set(group.providerId, node)
-                  else providerRowRefs.current.delete(group.providerId)
-                }}
-                active={activeProviderId === group.providerId}
-                selected={selectedProviderId === group.providerId}
-                title={group.label}
-                subtitle={selectedModel}
-                onClick={() => setActiveProviderId(group.providerId)}
-                onMouseEnter={() => setActiveProviderId(group.providerId)}
-              />
-            )
-          })}
-        </div>
+          <MenuSectionTitle icon={<Gauge className="h-3.5 w-3.5" strokeWidth={1.9} />}>
+            {t('composerModel')}
+          </MenuSectionTitle>
+          <div className="pr-0.5">
+            {needsProviderSetup ? (
+              <div className="px-2.5 py-2">
+                <p className="text-[12.5px] leading-5 text-ds-muted">
+                  {t('composerNoProviders')}
+                </p>
+                {onConfigureProviders ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onConfigureProviders()
+                    }}
+                    className="mt-2 flex w-full items-center justify-center rounded-lg border border-ds-border bg-ds-surface-subtle px-3 py-2 text-[12.5px] font-semibold text-ds-ink transition hover:bg-ds-hover"
+                  >
+                    {t('composerConfigureProviders')}
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              providerMenuGroups.map((group) => {
+                const selectedModel = group.modelIds.some((id) => modelIdsMatch(id, currentModel))
+                  ? currentModel
+                  : ''
+                return (
+                  <ProviderRow
+                    key={group.providerId}
+                    refNode={(node) => {
+                      if (node) providerRowRefs.current.set(group.providerId, node)
+                      else providerRowRefs.current.delete(group.providerId)
+                    }}
+                    active={activeProviderId === group.providerId}
+                    selected={selectedProviderId === group.providerId}
+                    title={group.label}
+                    subtitle={selectedModel}
+                    onClick={() => setActiveProviderId(group.providerId)}
+                    onMouseEnter={() => setActiveProviderId(group.providerId)}
+                  />
+                )
+              })
+            )}
+          </div>
         </div>
         {activeProviderGroup ? (
           <div
@@ -367,7 +404,12 @@ export function FloatingComposerModelPicker({
                     composerReasoningEffort,
                     modelProfileForModel(activeProviderGroup, id)
                   )
-                  onComposerModelChange(id)
+                  onComposerModelChange(
+                    id,
+                    activeProviderGroup.providerId === UNGROUPED_MODEL_PROVIDER_ID
+                      ? undefined
+                      : activeProviderGroup.providerId
+                  )
                   if (nextReasoning !== currentReasoning) {
                     onComposerReasoningEffortChange?.(nextReasoning)
                   }
@@ -391,21 +433,21 @@ export function FloatingComposerModelPicker({
           pickerRef.current = node
         }}
         className={`ds-composer-model-picker ds-no-drag relative flex h-9 items-center rounded-full transition ${comboboxWidthClass} ${
-          canChangeModel ? 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink' : 'text-ds-faint'
+          canOpenModelControls ? 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink' : 'text-ds-faint'
         }`}
         title={controlsTitle}
       >
         <span className="sr-only">{t('composerModel')}</span>
         <button
           type="button"
-          disabled={!canChangeModel}
+          disabled={!canOpenModelControls}
           onClick={() => setMenuOpen((open) => !open)}
           title={controlsTitle}
           aria-expanded={menuOpen}
           aria-haspopup="menu"
           aria-label={t('composerModelControls')}
           className={`flex h-9 min-w-0 flex-1 items-center justify-end gap-1 rounded-full py-2 pl-3 pr-1 text-[13px] font-medium outline-none transition ${
-            canChangeModel
+            canOpenModelControls
               ? 'text-current focus-visible:ring-2 focus-visible:ring-accent/25'
               : 'cursor-not-allowed text-ds-faint'
           }`}
@@ -430,7 +472,7 @@ export function FloatingComposerModelPicker({
   return (
     <div
       className={`ds-composer-model-picker ds-no-drag relative h-9 shrink-0 items-center rounded-full transition ${
-        canChangeModel ? 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink' : 'text-ds-faint'
+        canOpenModelControls ? 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink' : 'text-ds-faint'
       } ${
         compact ? 'max-w-[220px]' : 'max-w-[260px]'
       }`}
@@ -440,10 +482,10 @@ export function FloatingComposerModelPicker({
     >
       <button
         type="button"
-        disabled={!canChangeModel}
+        disabled={!canOpenModelControls}
         onClick={() => setMenuOpen((open) => !open)}
         className={`flex h-9 max-w-full items-center gap-1.5 rounded-full px-2.5 text-[13.5px] font-semibold transition disabled:cursor-not-allowed ${
-          canChangeModel ? 'hover:bg-ds-hover' : ''
+          canOpenModelControls ? 'hover:bg-ds-hover' : ''
         }`}
         aria-expanded={menuOpen}
         aria-haspopup="menu"
@@ -459,7 +501,7 @@ export function FloatingComposerModelPicker({
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ds-faint" strokeWidth={1.8} />
       </button>
 
-      {menuOpen && canChangeModel ? (
+      {menuOpen && canOpenModelControls ? (
         renderMenu('fixed z-[1000] overflow-x-hidden overflow-y-auto rounded-xl border border-ds-border bg-white p-1.5 text-[13px] text-ds-muted shadow-[0_22px_64px_rgba(20,47,95,0.18)] dark:bg-ds-card')
       ) : null}
     </div>
@@ -514,6 +556,19 @@ export function buildComposerModelMenuGroups({
     })
   }
   return groups
+}
+
+function shouldShowProviderSetupPrompt(groups: readonly ComposerModelMenuGroup[]): boolean {
+  const hasConfiguredProviderModels = groups.some((group) =>
+    group.providerId !== UNGROUPED_MODEL_PROVIDER_ID
+  )
+  if (hasConfiguredProviderModels) return false
+  const ungroupedModels = groups.flatMap((group) =>
+    group.providerId === UNGROUPED_MODEL_PROVIDER_ID ? group.modelIds : []
+  )
+  return ungroupedModels.every((id) =>
+    DEFAULT_COMPOSER_MODEL_KEYS.has(normalizeModelCapabilityKey(id))
+  )
 }
 
 export function normalizeComposerReasoningEffort(
@@ -715,10 +770,18 @@ function modelProfileForModel(
 
 function modelProfileForSelection(
   groups: readonly ComposerModelMenuGroup[],
-  modelId: string
+  modelId: string,
+  providerId?: string | null
 ): ModelProviderModelProfileV1 | undefined {
+  const selectedGroup = providerId
+    ? groups.find((group) => group.providerId === providerId)
+    : null
+  if (selectedGroup && selectedGroup.modelIds.some((id) => modelIdsMatch(id, modelId))) {
+    const profile = modelProfileForModel(selectedGroup, modelId)
+    if (profile) return profile
+  }
   for (const group of groups) {
-    if (!group.modelIds.includes(modelId)) continue
+    if (!group.modelIds.some((id) => modelIdsMatch(id, modelId))) continue
     const profile = modelProfileForModel(group, modelId)
     if (profile) return profile
   }

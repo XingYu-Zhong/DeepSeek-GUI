@@ -6,23 +6,27 @@ export const WRITE_INFOGRAPHIC_MAX_TEXT_CHARS = 6_000
  * the prefix either way.
  */
 export const WRITE_INFOGRAPHIC_DEFAULT_PROMPT = [
-  'Create a clean, modern infographic that visually summarizes the following content.',
-  'Use a clear visual hierarchy: a short headline, grouped sections with icons or simple charts, and readable labels.',
-  'Keep the text in the infographic in the same language as the source content. Flat design, light background.',
+  'Create a polished infographic poster from the source content below.',
+  'Goal: produce a finished information graphic, not a photo of devices, not an app screenshot.',
+  'Composition: portrait canvas, light background, clear headline at the top, 3-5 grouped sections, simple icons, compact charts or cards, generous spacing.',
+  'Text: use the source language, keep labels short and readable, summarize instead of copying long paragraphs, avoid tiny unreadable text.',
+  'Style: modern editorial vector design, restrained accent colors, crisp lines, high contrast, clean typography.',
   'Source content:'
-].join(' ')
+].join('\n')
 
 /**
  * Default prompt prefix for UI design mockup generation. Users can override
  * it via write.selectionAssist.designDraftPrompt.
  */
 export const WRITE_DESIGN_DRAFT_DEFAULT_PROMPT = [
-  'Create a high-fidelity UI design mockup for the product requirement described below.',
-  'Render a realistic application screen (pick the device frame that fits the requirement: desktop web or mobile),',
-  'with a clear layout, sensible navigation, and example content filled in.',
-  'Keep all interface text in the same language as the source content. Modern flat design, light background.',
+  'Create a high-fidelity UI design mockup from the product requirement below.',
+  'Goal: render the actual app screen or webpage, not a lifestyle photo, not a device-on-desk scene.',
+  'Canvas: desktop web unless the requirement clearly says mobile; use a flat front-facing screen with no angled phone or tablet mockups.',
+  'Layout: realistic navigation, hero or main content, cards, forms, charts, or lists where appropriate, polished spacing, consistent component states.',
+  'Text: use the source language, keep UI labels concise and readable, avoid tiny paragraphs and fake unreadable filler.',
+  'Style: modern product UI, light theme, restrained palette, crisp typography, high contrast.',
   'Requirement:'
-].join(' ')
+].join('\n')
 
 export type WriteInfographicKind = 'infographic' | 'design'
 
@@ -35,11 +39,13 @@ export type WriteInfographicRequest = {
   workspaceRoot: string
   /**
    * Workspace-relative directory the image is written to (default 'img').
-   * The SDD draft editor passes '.kunsdd/img'.
+   * The SDD draft editor passes the requirement unit's img directory.
    */
   imageDir?: string
   /** Image flavor: summary infographic (default) or UI design mockup. */
   kind?: WriteInfographicKind
+  /** Optional local reference image for image-to-image design generation. */
+  referenceImagePath?: string
 }
 
 export type WriteInfographicResult =

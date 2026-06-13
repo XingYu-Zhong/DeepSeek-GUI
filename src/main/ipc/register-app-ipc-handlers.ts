@@ -1,6 +1,7 @@
 import { app, dialog, ipcMain, shell, type BrowserWindow, type WebContents } from 'electron'
 import { watch, type FSWatcher } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
@@ -65,7 +66,6 @@ import {
   writeInfographicPayloadSchema,
   writeInlineCompletionPayloadSchema,
   writePrototypeFilePayloadSchema,
-  writePrototypePayloadSchema,
   writeRetrievalPayloadSchema,
   workspaceRootSchema
 } from './app-ipc-schemas'
@@ -108,7 +108,6 @@ import {
 } from '../services/write-inline-completion-service'
 import { retrieveWriteContext } from '../services/write-retrieval-service'
 import { requestWriteInfographic } from '../services/write-infographic-service'
-import { requestWritePrototype } from '../services/write-prototype-service'
 import { authorizePrototypePath } from '../services/prototype-embed-registry'
 import { requestSpeechTranscription } from '../services/speech-to-text-service'
 import { copyWriteDocumentAsRichText, exportWriteDocument } from '../services/write-export-service'
@@ -658,8 +657,9 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   })
 
   ipcMain.handle('ui-plugin:list', async () => {
-    await ensureBundledUiPlugins(app.getPath('userData'))
-    return { plugins: await listUiPlugins(app.getPath('userData')) }
+    const kunHomeDir = join(homedir(), '.kun')
+    await ensureBundledUiPlugins(kunHomeDir)
+    return { plugins: await listUiPlugins(kunHomeDir) }
   })
 
   ipcMain.handle('ui-plugin:install', async () => {
@@ -675,7 +675,7 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     if (picked.canceled || !sourceDir) {
       return { canceled: true as const }
     }
-    const result = await installUiPluginFromDirectory(app.getPath('userData'), sourceDir)
+    const result = await installUiPluginFromDirectory(join(homedir(), '.kun'), sourceDir)
     if (!result.ok) {
       return { canceled: false as const, ok: false as const, errors: result.errors }
     }
@@ -684,13 +684,14 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
 
   ipcMain.handle('ui-plugin:remove', async (_, payload: unknown) => {
     const request = parseIpcPayload('ui-plugin:remove', uiPluginIdPayloadSchema, payload)
-    return { ok: await removeUiPlugin(app.getPath('userData'), request.id) }
+    return { ok: await removeUiPlugin(join(homedir(), '.kun'), request.id) }
   })
 
   ipcMain.handle('ui-plugin:load', async (_, payload: unknown) => {
     const request = parseIpcPayload('ui-plugin:load', uiPluginIdPayloadSchema, payload)
-    await ensureBundledUiPlugins(app.getPath('userData'))
-    return loadUiPluginFigures(app.getPath('userData'), request.id)
+    const kunHomeDir = join(homedir(), '.kun')
+    await ensureBundledUiPlugins(kunHomeDir)
+    return loadUiPluginFigures(kunHomeDir, request.id)
   })
 
   ipcMain.handle('kun:config:read', async () => {
@@ -918,12 +919,6 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     requestWriteInfographic(
       await store.load(),
       parseIpcPayload('write:generate-infographic', writeInfographicPayloadSchema, payload)
-    )
-  )
-  ipcMain.handle('write:generate-prototype', async (_, payload: unknown) =>
-    requestWritePrototype(
-      await store.load(),
-      parseIpcPayload('write:generate-prototype', writePrototypePayloadSchema, payload)
     )
   )
   ipcMain.handle('write:authorize-prototype', async (_, payload: unknown) => {

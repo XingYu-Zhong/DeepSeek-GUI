@@ -46,7 +46,6 @@ import { GUI_UPDATE_CHANNELS } from '../../shared/gui-update'
 import { KEYBOARD_SHORTCUT_COMMANDS } from '../../shared/keyboard-shortcuts'
 import { WRITE_EXPORT_FORMATS } from '../../shared/write-export'
 import { WRITE_INFOGRAPHIC_MAX_TEXT_CHARS } from '../../shared/write-infographic'
-import { WRITE_PROTOTYPE_MAX_TEXT_CHARS } from '../../shared/write-prototype'
 import { SPEECH_TRANSCRIPTION_MAX_BASE64_CHARS, SPEECH_TRANSCRIPTION_MAX_DURATION_MS } from '../../shared/speech-to-text'
 
 const MAX_BODY_BYTES = 2_000_000
@@ -921,16 +920,8 @@ export const writeInfographicPayloadSchema = z
     filePath: trimmedString(MAX_PATH_LENGTH),
     workspaceRoot: trimmedString(MAX_PATH_LENGTH),
     imageDir: optionalTrimmedString(MAX_PATH_LENGTH),
-    kind: z.enum(['infographic', 'design']).optional()
-  })
-  .strict()
-
-export const writePrototypePayloadSchema = z
-  .object({
-    text: trimmedString(WRITE_PROTOTYPE_MAX_TEXT_CHARS),
-    filePath: trimmedString(MAX_PATH_LENGTH),
-    workspaceRoot: trimmedString(MAX_PATH_LENGTH),
-    outputDir: optionalTrimmedString(MAX_PATH_LENGTH)
+    kind: z.enum(['infographic', 'design']).optional(),
+    referenceImagePath: optionalTrimmedString(MAX_PATH_LENGTH)
   })
   .strict()
 

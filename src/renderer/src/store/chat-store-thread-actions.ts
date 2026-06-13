@@ -21,7 +21,13 @@ import {
 } from '../lib/thread-fork-registry'
 import { workspaceLabelFromPath } from '../lib/workspace-label'
 import { isInternalTemporaryWorkspace, normalizeWorkspaceRoot } from '../lib/workspace-path'
-import { buildClawRuntimePrompt, buildCodeRuntimePrompt, getActiveAgentApiKey } from '@shared/app-settings'
+import {
+  DEFAULT_MODEL_PROVIDER_ID,
+  buildClawRuntimePrompt,
+  buildCodeRuntimePrompt,
+  getActiveAgentApiKey,
+  getKunRuntimeSettings
+} from '@shared/app-settings'
 import type { ChatState, ChatStoreGet, ChatStoreSet } from './chat-store-types'
 import {
   activeClawChannel,
@@ -95,6 +101,37 @@ type StoreActionContext = {
 }
 
 let drainingQueuedMessages = false
+
+function fallbackComposerProviderIdForSend(state: ChatState): string {
+  return state.route === 'claw' ? '' : state.composerProviderId.trim()
+}
+
+async function ensureRuntimeProviderForSend(input: {
+  providerId?: string
+  model?: string
+  set: ChatStoreSet
+  get: ChatStoreGet
+}): Promise<void> {
+  const providerId = input.providerId?.trim()
+  const model = input.model?.trim()
+  if (!providerId || !model || model.toLowerCase() === 'auto') return
+  const settings = await rendererRuntimeClient.getSettings({ forceRefresh: true })
+  const runtime = getKunRuntimeSettings(settings)
+  const activeProviderId = runtime.providerId?.trim() || DEFAULT_MODEL_PROVIDER_ID
+  if (activeProviderId === providerId) return
+  input.set({ runtimeConnection: 'checking', error: null, runtimeErrorDetail: null })
+  try {
+    await window.kunGui.saveSettingsSilent({ agents: { kun: { providerId, model } } })
+    rendererRuntimeClient.invalidateSettings()
+    await rendererRuntimeClient.restartRuntime()
+    await getProvider().connect()
+    input.set({ runtimeConnection: 'ready', error: null, runtimeErrorDetail: null })
+    void input.get().loadComposerModels()
+  } catch (error) {
+    input.set({ runtimeConnection: 'offline' })
+    throw error
+  }
+}
 
 function subscribeThreadEventsWithRecovery(
   provider: AgentProvider,
@@ -378,6 +415,8 @@ export function createThreadActions(
       const overrideModel = overrides?.model?.trim()
       const composerModel =
         overrideModel ?? (get().route === 'claw' && clawModel ? clawModel : get().composerModel.trim())
+      const composerProviderId =
+        overrides?.providerId?.trim() || fallbackComposerProviderIdForSend(get())
       const userModelChip =
         overrides?.modelLabel ?? optimisticUserModelLabel(composerModel, threadSnap?.model)
       const displayText = overrides?.displayText?.trim()
@@ -393,6 +432,7 @@ export function createThreadActions(
             ...(displayText ? { displayText } : {}),
             ...(mode ? { mode } : {}),
             ...(composerModel ? { model: composerModel } : {}),
+            ...(composerProviderId ? { providerId: composerProviderId } : {}),
             ...(userModelChip ? { modelLabel: userModelChip } : {}),
             ...(reasoningEffort ? { reasoningEffort } : {}),
             ...(overrides?.guiPlan ? { guiPlan: overrides.guiPlan } : {}),
@@ -438,6 +478,8 @@ export function createThreadActions(
     const overrideModel = overrides?.model?.trim()
     const composerModel =
       queued?.model ?? overrideModel ?? (get().route === 'claw' && clawModel ? clawModel : get().composerModel.trim())
+    const composerProviderId =
+      queued?.providerId ?? overrides?.providerId?.trim() ?? fallbackComposerProviderIdForSend(get())
     const reasoningEffort = queued?.reasoningEffort ?? overrides?.reasoningEffort?.trim()
     const userModelChip =
       queued?.modelLabel ?? overrides?.modelLabel ?? optimisticUserModelLabel(composerModel, threadSnap?.model)
@@ -567,6 +609,12 @@ export function createThreadActions(
     try {
       const seqAtSend = get().lastSeq
       const channel = get().route === 'claw' ? activeClawChannel(get()) : null
+      await ensureRuntimeProviderForSend({
+        providerId: channel ? undefined : composerProviderId,
+        model: composerModel,
+        set,
+        get
+      })
       const settings = await rendererRuntimeClient.getSettings()
       let runtimeText: string
       if (channel) {
@@ -757,6 +805,7 @@ export function createThreadActions(
       }
       const threadSnap = get().threads.find((thread) => thread.id === activeThreadId)
       const composerModel = get().composerModel.trim()
+      const composerProviderId = get().composerProviderId.trim()
       const userModelChip = optimisticUserModelLabel(composerModel, threadSnap?.model)
       const seqAtSend = get().lastSeq
       resetBusyRecoveryAttempts()
@@ -770,6 +819,12 @@ export function createThreadActions(
         error: null,
         currentTurnId: null,
         currentTurnUserId: null
+      })
+      await ensureRuntimeProviderForSend({
+        providerId: composerProviderId,
+        model: composerModel,
+        set,
+        get
       })
       const { turnId, userMessageItemId } = await p.reviewThread(activeThreadId, target, {
         ...(composerModel ? { model: composerModel } : {})

@@ -1723,8 +1723,10 @@ describe('DeepseekCompatModelClient', () => {
   })
 
   it('reports an error when the HTTP response is not OK', async () => {
+    const providerMessage = `Not supported model ${'mimo-v2.5-pro-ultraspeed'.repeat(40)}`
+    const body = JSON.stringify({ error: { code: '400', message: providerMessage } })
     const fetchImpl: typeof fetch = async () =>
-      new Response('upstream failure', { status: 500 })
+      new Response(body, { status: 400 })
     const client = new DeepseekCompatModelClient({
       baseUrl: 'https://example.com/beta',
       apiKey: 'k',
@@ -1736,6 +1738,12 @@ describe('DeepseekCompatModelClient', () => {
       chunks.push(chunk)
     }
     expect(chunks[0].kind).toBe('error')
+    expect(chunks[0]).toMatchObject({
+      kind: 'error',
+      message: `model request failed with status 400: ${body}`,
+      code: 'http_400'
+    })
+    expect(JSON.stringify(chunks[0])).toContain(providerMessage)
   })
 
   it('reports provider JSON error payloads returned with HTTP 200', async () => {

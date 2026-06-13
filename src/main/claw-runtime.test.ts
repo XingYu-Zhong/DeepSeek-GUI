@@ -1126,6 +1126,178 @@ describe('ClawRuntime', () => {
     })
   })
 
+  it('backfills a WeChat conversation when an existing channel thread handles the webhook', async () => {
+    const settings = buildSettings()
+    settings.claw.im.enabled = true
+    settings.claw.im.responseTimeoutMs = 2_500
+    settings.claw.channels = [buildChannel({
+      provider: 'weixin' as const,
+      id: 'channel_weixin',
+      label: 'WeChat',
+      threadId: 'thr_weixin',
+      conversations: []
+    })]
+    const { current, store } = mutableSettingsStore(settings)
+    const runtimeRequest = vi.fn(async (_settings, path, init) => {
+      if (path === '/v1/threads/thr_weixin/turns' && init?.method === 'POST') {
+        return { ok: true, status: 202, body: JSON.stringify({ turnId: 'turn_weixin' }) }
+      }
+      if (path === '/v1/threads/thr_weixin' && init?.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          body: JSON.stringify({
+            id: 'thr_weixin',
+            status: 'idle',
+            turns: [
+              {
+                id: 'turn_weixin',
+                status: 'completed',
+                items: [{ kind: 'assistant_text', text: 'hello from existing thread' }]
+              }
+            ]
+          })
+        }
+      }
+      throw new Error(`unexpected path ${path}`)
+    })
+    const runtime = createClawRuntime({
+      store: store as never,
+      runtimeRequest: runtimeRequest as never,
+      logError: () => undefined,
+      createScheduledTaskFromText: vi.fn(async () => ({ kind: 'noop' as const }))
+    })
+    const body = JSON.stringify({
+      text: '你好',
+      provider: 'weixin',
+      channelId: 'channel_weixin',
+      chatId: 'wx_user_1',
+      messageId: 'wx_msg_1',
+      senderId: 'wx_user_1',
+      senderName: 'Alice'
+    })
+    const req = {
+      method: 'POST',
+      url: settings.claw.im.path,
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(body)
+      }
+    }
+    let status = 0
+    let responseBody = ''
+    const res = {
+      writeHead: vi.fn((nextStatus: number) => {
+        status = nextStatus
+      }),
+      end: vi.fn((payload: string) => {
+        responseBody = payload
+      })
+    }
+
+    await (runtime as unknown as {
+      handleWebhook: (request: typeof req, response: typeof res) => Promise<void>
+    }).handleWebhook(req, res)
+
+    expect(status).toBe(200)
+    expect(JSON.parse(responseBody)).toMatchObject({
+      ok: true,
+      reply: 'hello from existing thread'
+    })
+    expect(current().claw.channels[0].threadId).toBe('thr_weixin')
+    expect(current().claw.channels[0].conversations[0]).toMatchObject({
+      chatId: 'wx_user_1',
+      latestMessageId: 'wx_msg_1',
+      senderId: 'wx_user_1',
+      senderName: 'Alice',
+      localThreadId: 'thr_weixin'
+    })
+  })
+
+  it('backfills a WeChat conversation from legacy webhook sender fields', async () => {
+    const settings = buildSettings()
+    settings.claw.im.enabled = true
+    settings.claw.im.responseTimeoutMs = 2_500
+    settings.claw.channels = [buildChannel({
+      provider: 'weixin' as const,
+      id: 'channel_weixin',
+      label: 'WeChat',
+      threadId: 'thr_weixin',
+      conversations: []
+    })]
+    const { current, store } = mutableSettingsStore(settings)
+    const runtimeRequest = vi.fn(async (_settings, path, init) => {
+      if (path === '/v1/threads/thr_weixin/turns' && init?.method === 'POST') {
+        return { ok: true, status: 202, body: JSON.stringify({ turnId: 'turn_weixin' }) }
+      }
+      if (path === '/v1/threads/thr_weixin' && init?.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          body: JSON.stringify({
+            id: 'thr_weixin',
+            status: 'idle',
+            turns: [
+              {
+                id: 'turn_weixin',
+                status: 'completed',
+                items: [{ kind: 'assistant_text', text: 'hello from legacy sender' }]
+              }
+            ]
+          })
+        }
+      }
+      throw new Error(`unexpected path ${path}`)
+    })
+    const runtime = createClawRuntime({
+      store: store as never,
+      runtimeRequest: runtimeRequest as never,
+      logError: () => undefined,
+      createScheduledTaskFromText: vi.fn(async () => ({ kind: 'noop' as const }))
+    })
+    const body = JSON.stringify({
+      text: '你好',
+      provider: 'weixin',
+      channelId: 'channel_weixin',
+      sender: 'wx_user_1'
+    })
+    const req = {
+      method: 'POST',
+      url: settings.claw.im.path,
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(body)
+      }
+    }
+    let status = 0
+    let responseBody = ''
+    const res = {
+      writeHead: vi.fn((nextStatus: number) => {
+        status = nextStatus
+      }),
+      end: vi.fn((payload: string) => {
+        responseBody = payload
+      })
+    }
+
+    await (runtime as unknown as {
+      handleWebhook: (request: typeof req, response: typeof res) => Promise<void>
+    }).handleWebhook(req, res)
+
+    expect(status).toBe(200)
+    expect(JSON.parse(responseBody)).toMatchObject({
+      ok: true,
+      reply: 'hello from legacy sender'
+    })
+    expect(current().claw.channels[0].conversations[0]).toMatchObject({
+      chatId: 'wx_user_1',
+      senderId: 'wx_user_1',
+      senderName: 'wx_user_1',
+      localThreadId: 'thr_weixin'
+    })
+    expect(current().claw.channels[0].conversations[0].latestMessageId).toMatch(/^wx_/)
+  })
+
   it('sends the channel intro before handling the first Feishu message', async () => {
     const settings = buildSettings()
     settings.claw.im.enabled = true

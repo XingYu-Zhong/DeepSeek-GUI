@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -27,7 +27,7 @@ import type { CoreRuntimeInfoJson, CoreRuntimeSkillJson } from '../agent/kun-con
 import { getProvider } from '../agent/registry'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import { useChatStore } from '../store/chat-store'
-import { isClawThread } from '../store/chat-store-helpers'
+import { isClawThread, providerIdForComposerModel } from '../store/chat-store-helpers'
 import { threadHasPendingRuntimeWork } from '../store/chat-store-runtime-helpers'
 import {
   extractLatestTurnAutoOpenDevPreviewUrls,
@@ -59,6 +59,7 @@ import { useWriteWorkspaceStore } from '../write/write-workspace-store'
 import { isWriteThreadId } from '../write/write-thread-registry'
 import { createSddDraft, forgetRememberedSddDraft, useSddDraftStore } from '../sdd/sdd-draft-store'
 import type { SddDraft, SddDraftSaveStatus } from '../sdd/sdd-draft-store'
+import { titleFromSddDraftContent } from '../sdd/sdd-draft-history'
 import { saveActiveSddDraftToDisk } from '../sdd/sdd-draft-actions'
 import { restoreRememberedSddDraft, restoreSddDraft } from '../sdd/sdd-draft-restore'
 import { composeSddAssistantPrompt } from '../sdd/sdd-assistant-prompt'
@@ -71,7 +72,12 @@ import {
   releaseSddAssistantThread,
   sddAssistantThreadIdForDraft
 } from '../sdd/sdd-thread-registry'
+import {
+  refreshSddChatTranscriptFromProvider,
+  writeSddChatTranscriptForThread
+} from '../sdd/sdd-chat-transcript'
 import { parseGuiPlanCommand } from '../plan/plan-command'
+import { confirmDialog } from '../lib/confirm-dialog'
 import { DevPreviewLaunchCard } from './DevPreviewLaunchCard'
 import { RuntimeBanner } from './RuntimeBanner'
 import { useWorkbenchLayout } from './workbench-layout'
@@ -89,6 +95,7 @@ import {
   mergeComposerFileReferences,
   type ComposerFileContextEntry
 } from '../lib/composer-file-references'
+import { resolveWriteRuntimeBannerMessage } from '../lib/write-runtime-banner'
 
 const ChangeInspector = lazy(() =>
   import('./ChangeInspector').then((module) => ({ default: module.ChangeInspector }))
@@ -122,6 +129,7 @@ type PendingSddPlanTarget = {
 
 const COMPOSER_FILE_CONTEXT_MAX_CHARS_PER_FILE = 60_000
 const COMPOSER_FILE_CONTEXT_MAX_TOTAL_CHARS = 180_000
+const SDD_ASSISTANT_TITLE_SYNC_DELAY_MS = 900
 const DESKTOP_SHORTCUT_COMMANDS: Partial<Record<KeyboardShortcutCommandId, DesktopCommand>> = {
   quit: 'quit',
   undo: 'undo',
@@ -144,21 +152,36 @@ function normalizeModelCapabilityKey(modelId: string): string {
   return modelId.trim().toLowerCase()
 }
 
-function modelProfileForSelection(
-  groups: readonly ModelProviderModelGroup[],
+function modelProfileForGroup(
+  group: ModelProviderModelGroup,
   modelId: string
 ): ModelProviderModelProfileV1 | undefined {
   const key = normalizeModelCapabilityKey(modelId)
   if (!key) return undefined
-  for (const group of groups) {
-    const profiles = group.modelProfiles ?? {}
-    const direct = profiles[key] ?? profiles[modelId.trim()]
-    if (direct) return direct
-    for (const profile of Object.values(profiles)) {
-      if (profile.aliases?.some((alias) => normalizeModelCapabilityKey(alias) === key)) {
-        return profile
-      }
+  const profiles = group.modelProfiles ?? {}
+  const direct = profiles[key] ?? profiles[modelId.trim()]
+  if (direct) return direct
+  return Object.values(profiles).find((profile) =>
+    profile.aliases?.some((alias) => normalizeModelCapabilityKey(alias) === key)
+  )
+}
+
+function modelProfileForSelection(
+  groups: readonly ModelProviderModelGroup[],
+  modelId: string,
+  providerId?: string
+): ModelProviderModelProfileV1 | undefined {
+  const selectedProviderId = providerId?.trim()
+  if (selectedProviderId) {
+    const selectedGroup = groups.find((group) => group.providerId === selectedProviderId)
+    if (selectedGroup) {
+      const profile = modelProfileForGroup(selectedGroup, modelId)
+      if (profile) return profile
     }
+  }
+  for (const group of groups) {
+    const profile = modelProfileForGroup(group, modelId)
+    if (profile) return profile
   }
   return undefined
 }
@@ -193,6 +216,10 @@ function sddDraftSourceRequest(markdown: string, fallbackPath: string): string {
     .map((line) => line.replace(/^#+\s*/, '').trim())
     .find(Boolean)
   return (firstMeaningfulLine || fallbackPath).slice(0, 160)
+}
+
+function sddAssistantThreadTitle(markdown: string, fallback: string): string {
+  return titleFromSddDraftContent(markdown, fallback).trim() || fallback
 }
 
 function sddPlanMatchesPendingTarget(
@@ -303,6 +330,7 @@ export function Workbench(): ReactElement {
     interrupt,
     probeRuntime,
     composerModel,
+    composerProviderId,
     composerPickList,
     composerModelGroups,
     setComposerModel,
@@ -359,6 +387,7 @@ export function Workbench(): ReactElement {
       interrupt: s.interrupt,
       probeRuntime: s.probeRuntime,
       composerModel: s.composerModel,
+      composerProviderId: s.composerProviderId,
       composerPickList: s.composerPickList,
       composerModelGroups: s.composerModelGroups,
       setComposerModel: s.setComposerModel,
@@ -397,8 +426,10 @@ export function Workbench(): ReactElement {
   const writeAssistantOpen = useWriteWorkspaceStore((s) => s.assistantOpen)
   const setWriteAssistantOpen = useWriteWorkspaceStore((s) => s.setAssistantOpen)
   const writeAssistantModel = useWriteWorkspaceStore((s) => s.assistantModel)
+  const writeAssistantProviderId = useWriteWorkspaceStore((s) => s.assistantProviderId)
   const setWriteAssistantModel = useWriteWorkspaceStore((s) => s.setAssistantModel)
   const activeSddDraft = useSddDraftStore((s) => s.activeDraft)
+  const sddDraftContent = useSddDraftStore((s) => s.content)
   const sddDraftOperationStatus = useSddDraftStore((s) => s.operationStatus)
   const writeAssistantPickList = useMemo(() => {
     const ordered = new Set<string>()
@@ -414,6 +445,18 @@ export function Workbench(): ReactElement {
     if (current && current.toLowerCase() !== 'auto') ordered.add(current)
     return [...ordered]
   }, [composerPickList, writeAssistantModel])
+  const resolvedWriteAssistantProviderId = useMemo(() => {
+    const stored = writeAssistantProviderId.trim()
+    if (stored) {
+      const group = composerModelGroups.find((item) => item.providerId === stored)
+      const modelKey = normalizeModelCapabilityKey(writeAssistantModel)
+      const storedMatchesModel =
+        !modelKey ||
+        group?.modelIds.some((modelId) => normalizeModelCapabilityKey(modelId) === modelKey) === true
+      if (group && storedMatchesModel) return stored
+    }
+    return providerIdForComposerModel(composerModelGroups, writeAssistantModel)
+  }, [composerModelGroups, writeAssistantModel, writeAssistantProviderId])
   const stageInsetClass = 'ds-stage-inset'
   const keyboardShortcuts = useKeyboardShortcutSettings()
   const keyboardShortcutBindings = useMemo(
@@ -428,6 +471,8 @@ export function Workbench(): ReactElement {
   const restoredSddDraftWorkspaceRef = useRef('')
   const sddUpgradeInFlightRef = useRef(false)
   const sddUpgradeTargetRef = useRef<PendingSddPlanTarget | null>(null)
+  const sddTitleSyncTimerRef = useRef<number | null>(null)
+  const lastSyncedSddTitleRef = useRef<Record<string, string>>({})
   const timelineBlocks = blocks
   const timelineLiveReasoning = liveReasoning
   const timelineLiveAssistant = liveAssistant
@@ -500,6 +545,32 @@ export function Workbench(): ReactElement {
     workspaceRoot,
     writeAssistantOpen
   })
+  const titleForSddDraft = useCallback((draft: SddDraft): string => {
+    const snapshot = useSddDraftStore.getState()
+    const markdown = snapshot.activeDraft?.id === draft.id ? snapshot.content : ''
+    return sddAssistantThreadTitle(markdown, t('sddUntitledRequirement'))
+  }, [t])
+  const renameSddAssistantThreadToDraft = useCallback(async (
+    threadId: string,
+    draft: SddDraft
+  ): Promise<void> => {
+    const targetId = threadId.trim()
+    const nextTitle = titleForSddDraft(draft)
+    if (!targetId || !nextTitle || runtimeConnection !== 'ready') return
+    const currentTitle = useChatStore.getState().threads.find((thread) => thread.id === targetId)?.title.trim()
+    if (currentTitle === nextTitle || lastSyncedSddTitleRef.current[targetId] === nextTitle) return
+    try {
+      await getProvider().renameThread(targetId, nextTitle)
+      lastSyncedSddTitleRef.current[targetId] = nextTitle
+      useChatStore.setState((state) => ({
+        threads: state.threads.map((thread) =>
+          thread.id === targetId ? { ...thread, title: nextTitle } : thread
+        )
+      }))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+    }
+  }, [runtimeConnection, setError, titleForSddDraft])
   const {
     activeGuiPlan,
     buildGuiPlan,
@@ -522,7 +593,10 @@ export function Workbench(): ReactElement {
     workspaceRoot,
     onPlanBuildStarted: async (plan) => {
       const threadId = plan.threadId?.trim() || useChatStore.getState().activeThreadId
-      if (!threadId || !releaseSddAssistantThread(threadId)) return
+      const draft = useSddDraftStore.getState().activeDraft
+      if (!threadId) return
+      if (draft) await renameSddAssistantThreadToDraft(threadId, draft)
+      if (!releaseSddAssistantThread(threadId)) return
       await useChatStore.getState().refreshThreads()
     }
   })
@@ -817,19 +891,24 @@ export function Workbench(): ReactElement {
     : route === 'write' || rightPanelMode === 'sdd-ai'
       ? writeAssistantModel
     : composerModel
+  const selectedComposerProviderId = route === 'write' || rightPanelMode === 'sdd-ai'
+    ? resolvedWriteAssistantProviderId
+    : route === 'chat'
+      ? composerProviderId
+      : ''
   const selectedModelSupportsImageInput = useMemo(() => {
     const selected = selectedComposerModel.trim()
     const runtimeModel = runtimeInfo?.capabilities.model
     if (!selected || selected.toLowerCase() === 'auto') {
       return runtimeModel?.inputModalities.includes('image') === true
     }
-    const profile = modelProfileForSelection(composerModelGroups, selected)
+    const profile = modelProfileForSelection(composerModelGroups, selected, selectedComposerProviderId)
     if (profile) return modelSupportsImageInput(profile)
     if (runtimeModel && normalizeModelCapabilityKey(runtimeModel.id) === normalizeModelCapabilityKey(selected)) {
       return runtimeModel.inputModalities.includes('image')
     }
     return false
-  }, [composerModelGroups, runtimeInfo, selectedComposerModel])
+  }, [composerModelGroups, runtimeInfo, selectedComposerModel, selectedComposerProviderId])
 
   const attachmentUploadEnabled = isChatAttachmentUploadEnabled({
     runtimeConnection,
@@ -1000,10 +1079,13 @@ export function Workbench(): ReactElement {
         retrieval
       })
       const model = writeState.assistantModel.trim()
+      const providerId =
+        writeState.assistantProviderId.trim() || providerIdForComposerModel(composerModelGroups, model)
       const reasoningEffort = composerReasoningEffortRequestValue(composerReasoningEffort)
       const sent = await sendMessage(prompt, mode === 'plan' ? 'plan' : 'agent', {
         ...(!v && attachmentIds.length > 0 ? { displayText: t('composerImageOnlyDisplay') } : {}),
         ...(model ? { model } : {}),
+        ...(providerId ? { providerId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
         ...(attachmentIds.length ? { attachmentIds, attachments } : {})
       })
@@ -1028,7 +1110,7 @@ export function Workbench(): ReactElement {
       const provider = getProvider()
       const thread = await provider.createThread({
         workspace: normalizedWorkspace,
-        title: t('sddAssistant'),
+        title: titleForSddDraft(draft),
         mode: 'agent'
       })
       const normalizedThread = {
@@ -1036,6 +1118,13 @@ export function Workbench(): ReactElement {
         workspace: normalizeWorkspaceRoot(thread.workspace) || normalizedWorkspace
       }
       markSddAssistantThread(draft, normalizedThread.id)
+      // Record the thread association inside the requirement unit right away.
+      void writeSddChatTranscriptForThread({
+        workspaceRoot: draft.workspaceRoot,
+        draftRelativePath: draft.relativePath,
+        threadId: normalizedThread.id,
+        blocks: []
+      })
       useChatStore.setState((state) => ({
         activeThreadId: normalizedThread.id,
         threads: state.threads.some((item) => item.id === normalizedThread.id)
@@ -1060,11 +1149,38 @@ export function Workbench(): ReactElement {
         await selectThread(registeredThreadId)
       }
       if (useChatStore.getState().activeThreadId === registeredThreadId) {
+        void renameSddAssistantThreadToDraft(registeredThreadId, draft)
         return registeredThreadId
       }
     }
     return createSddAssistantThreadForDraft(draft)
   }
+
+  useEffect(() => {
+    const draft = activeSddDraft
+    if (!draft || runtimeConnection !== 'ready') return
+    const threadId = sddAssistantThreadIdForDraft(draft)
+    if (!threadId) return
+    const nextTitle = sddAssistantThreadTitle(sddDraftContent, t('sddUntitledRequirement'))
+    if (!nextTitle || lastSyncedSddTitleRef.current[threadId] === nextTitle) return
+    if (sddTitleSyncTimerRef.current) {
+      window.clearTimeout(sddTitleSyncTimerRef.current)
+    }
+    sddTitleSyncTimerRef.current = window.setTimeout(() => {
+      sddTitleSyncTimerRef.current = null
+      const latestDraft = useSddDraftStore.getState().activeDraft
+      if (!latestDraft || latestDraft.id !== draft.id) return
+      const latestThreadId = sddAssistantThreadIdForDraft(latestDraft)
+      if (latestThreadId !== threadId) return
+      void renameSddAssistantThreadToDraft(threadId, latestDraft)
+    }, SDD_ASSISTANT_TITLE_SYNC_DELAY_MS)
+    return () => {
+      if (sddTitleSyncTimerRef.current) {
+        window.clearTimeout(sddTitleSyncTimerRef.current)
+        sddTitleSyncTimerRef.current = null
+      }
+    }
+  }, [activeSddDraft, renameSddAssistantThreadToDraft, runtimeConnection, sddDraftContent, t])
 
   const openSddRequirementDraft = async (
     draft: SddDraft,
@@ -1080,6 +1196,9 @@ export function Workbench(): ReactElement {
       saveStatus: options.saveStatus
     })
     dismissedSddDraftWorkspacesRef.current.delete(normalizeWorkspaceRoot(draft.workspaceRoot))
+    // Self-heal the unit's conversation record (covers turns that completed
+    // while the draft was closed or in another thread).
+    void refreshSddChatTranscriptFromProvider(draft)
     setInput('')
     setMode('agent')
     setRoute('chat')
@@ -1256,10 +1375,12 @@ export function Workbench(): ReactElement {
     })
     setInput('')
     const model = writeAssistantModel.trim()
+    const providerId = resolvedWriteAssistantProviderId.trim()
     const reasoningEffort = composerReasoningEffortRequestValue(composerReasoningEffort)
     const sent = await sendMessage(prompt, mode === 'plan' ? 'plan' : 'agent', {
       displayText: v || t('composerImageOnlyDisplay'),
       ...(model ? { model } : {}),
+      ...(providerId ? { providerId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(attachmentIds.length ? { attachmentIds, attachments } : {})
     })
@@ -1295,6 +1416,101 @@ export function Workbench(): ReactElement {
       attachmentIds.push(attachment.id)
     }
     return { images: withAttachmentIds(images, attachmentIds), attachmentIds }
+  }
+
+  const firstVisionCapableModel = (): { modelId: string; providerId?: string } | null => {
+    for (const group of composerModelGroups) {
+      for (const modelId of group.modelIds) {
+        const profile = modelProfileForSelection(composerModelGroups, modelId, group.providerId)
+        if (profile && modelSupportsImageInput(profile)) {
+          const providerId = group.providerId.trim()
+          return {
+            modelId,
+            ...(providerId ? { providerId } : {})
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  /** Send a prototype-generation turn to the SDD assistant. Image-driven
+   * prototypes need a vision model: prompt to switch when the current one
+   * cannot read images. Returns false when nothing was sent. */
+  const sendSddPrototypeTurn = async (payload: {
+    prompt: string
+    displayText: string
+    image?: { absolutePath: string; alt: string }
+  }): Promise<boolean> => {
+    const draft = useSddDraftStore.getState().activeDraft
+    if (!draft) return false
+    if (runtimeConnection !== 'ready') {
+      useSddDraftStore.getState().setOperationStatus('error', t('runtimeActionNeedsConnection'))
+      return false
+    }
+
+    if (payload.image && !selectedModelSupportsImageInput) {
+      const visionSelection = firstVisionCapableModel()
+      if (!visionSelection) {
+        useSddDraftStore.getState().setOperationStatus('error', t('sddPrototypeNoVisionModel'))
+        return false
+      }
+      const switchModel = await confirmDialog(
+        t('sddPrototypeSwitchVisionModel', { model: visionSelection.modelId })
+      )
+      if (!switchModel) return false
+      setWriteAssistantModel(visionSelection.modelId, visionSelection.providerId)
+    }
+
+    const threadId = await ensureSddAssistantThreadForDraft(draft)
+    if (!threadId) return false
+    await openSddAssistantPanel()
+
+    let attachmentIds: string[] = []
+    if (payload.image) {
+      try {
+        const read = await window.kunGui.readWorkspaceImage({
+          path: payload.image.absolutePath,
+          workspaceRoot: draft.workspaceRoot
+        })
+        if (!read.ok) throw new Error(read.message)
+        const dataBase64 = read.dataUrl.split(';base64,', 2)[1] ?? ''
+        if (!dataBase64) throw new Error(t('composerAttachmentUnavailable'))
+        const uploaded = await uploadSddImagesAsAttachments(
+          [
+            {
+              index: 1,
+              alt: payload.image.alt,
+              markdownPath: payload.image.absolutePath,
+              relativePath: payload.image.absolutePath,
+              mimeType: read.mimeType,
+              dataBase64,
+              byteSize: read.size
+            }
+          ],
+          threadId,
+          draft.workspaceRoot
+        )
+        attachmentIds = uploaded.attachmentIds
+      } catch (error) {
+        useSddDraftStore.getState().setOperationStatus(
+          'error',
+          error instanceof Error ? error.message : String(error)
+        )
+        return false
+      }
+    }
+
+    const assistantSelection = useWriteWorkspaceStore.getState()
+    const model = assistantSelection.assistantModel.trim()
+    const providerId =
+      assistantSelection.assistantProviderId.trim() || providerIdForComposerModel(composerModelGroups, model)
+    return sendMessage(payload.prompt, 'agent', {
+      displayText: payload.displayText,
+      ...(model ? { model } : {}),
+      ...(providerId ? { providerId } : {}),
+      ...(attachmentIds.length ? { attachmentIds } : {})
+    })
   }
 
   const handleSddNextStep = async (): Promise<void> => {
@@ -1755,9 +1971,11 @@ export function Workbench(): ReactElement {
     />
   )
 
-  const writeRuntimeBannerMessage = runtimeConnection !== 'ready'
-    ? (error?.trim() || t('writeRuntimeUnavailable'))
-    : null
+  const writeRuntimeBannerMessage = resolveWriteRuntimeBannerMessage({
+    runtimeConnection,
+    error,
+    runtimeActionNeedsConnection: t('runtimeActionNeedsConnection')
+  })
   const rightPanelDockedVisible = rightPanelVisible && !planPanelInOverlay
 
   const renderPlanPanel = (className: string): ReactElement => (
@@ -1799,6 +2017,7 @@ export function Workbench(): ReactElement {
                 liveReasoning={liveReasoning}
                 liveAssistant={liveAssistant}
                 composerModel={writeAssistantModel}
+                composerProviderId={resolvedWriteAssistantProviderId}
                 composerPickList={writeAssistantPickList}
                 composerModelGroups={composerModelGroups}
                 composerReasoningEffort={composerReasoningEffort}
@@ -1817,6 +2036,7 @@ export function Workbench(): ReactElement {
                 onInterrupt={(options) => void interrupt(options)}
                 onRetryConnection={() => void probeRuntime('user', { restart: true })}
                 onOpenSettings={() => openSettings('agents')}
+                onConfigureProviders={() => openSettings('providers')}
                 onNewConversation={startNewWriteAssistantConversation}
                 onPickWorkspace={() => void pickWriteAssistantWorkspace()}
                 onCollapse={closeRightPanel}
@@ -1836,6 +2056,7 @@ export function Workbench(): ReactElement {
                 liveReasoning={liveReasoning}
                 liveAssistant={liveAssistant}
                 composerModel={writeAssistantModel}
+                composerProviderId={resolvedWriteAssistantProviderId}
                 composerPickList={writeAssistantPickList}
                 composerModelGroups={composerModelGroups}
                 composerReasoningEffort={composerReasoningEffort}
@@ -1854,6 +2075,7 @@ export function Workbench(): ReactElement {
                 onInterrupt={(options) => void interrupt(options)}
                 onRetryConnection={() => void probeRuntime('user', { restart: true })}
                 onOpenSettings={() => openSettings('agents')}
+                onConfigureProviders={() => openSettings('providers')}
                 onNewConversation={() => {
                   setInput('')
                   void createSddAssistantThreadForDraft(activeSddDraft)
@@ -2033,6 +2255,7 @@ export function Workbench(): ReactElement {
               onToggleLeftSidebar={toggleLeftSidebar}
               onToggleAssistant={() => void toggleSddAssistantPanel()}
               onAssistantQuote={quoteToSddAssistant}
+              onPrototypeTurn={sendSddPrototypeTurn}
               onNext={() => void handleSddNextStep()}
               onClose={() => dismissActiveSddDraft({ closeAssistant: true })}
               nextDisabled={busy || runtimeConnection !== 'ready' || sddDraftOperationStatus === 'upgrading'}
@@ -2116,21 +2339,23 @@ export function Workbench(): ReactElement {
                     ? clawChannels.find((channel) => channel.id === activeClawChannelId)?.model ?? 'auto'
                     : composerModel
                 }
+                composerProviderId={route === 'chat' ? composerProviderId : undefined}
                 composerPickList={composerPickList}
                 composerModelGroups={composerModelGroups}
                 composerReasoningEffort={
                   route === 'chat' || route === 'claw' ? composerReasoningEffort : undefined
                 }
-                onComposerModelChange={(modelId) => {
+                onComposerModelChange={(modelId, providerId) => {
                   if (route === 'claw' && activeClawChannelId) {
                     void setClawChannelModel(activeClawChannelId, modelId)
                     return
                   }
-                  setComposerModel(modelId)
+                  setComposerModel(modelId, providerId)
                 }}
                 onComposerReasoningEffortChange={
                   route === 'chat' || route === 'claw' ? setComposerReasoningEffort : undefined
                 }
+                onConfigureProviders={() => openSettings('providers')}
                 onSend={handleSend}
                 attachments={composerAttachments}
                 attachmentUploadEnabled={attachmentUploadEnabled}

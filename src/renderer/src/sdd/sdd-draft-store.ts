@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { buildSddDraftRelativePath, normalizeSddRelativePath } from '@shared/sdd'
+import { buildSddDraftRelativePath, isSddDraftRelativePath, normalizeSddRelativePath } from '@shared/sdd'
 import { browserStorage } from '../lib/browser-storage'
 
 export type SddDraftSaveStatus = 'saved' | 'dirty' | 'saving' | 'error'
@@ -87,6 +87,10 @@ function normalizeDraft(raw: unknown, fallbackId = ''): SddDraft | null {
   const workspaceRoot = normalizeWorkspaceRoot(normalizeText(raw.workspaceRoot))
   const relativePath = normalizeSddRelativePath(normalizeText(raw.relativePath))
   if (!id || !workspaceRoot || !relativePath) return null
+  // Pre-unit-layout registry entries (.kunsdd/draft/...) are retired here in
+  // one place: dropping the draft also drops its activeByWorkspace pointer
+  // and content snapshot downstream.
+  if (!isSddDraftRelativePath(relativePath)) return null
   const absolutePath = normalizeText(raw.absolutePath)
   const createdAt = normalizeText(raw.createdAt) || new Date(0).toISOString()
   const updatedAt = normalizeText(raw.updatedAt) || createdAt

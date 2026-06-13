@@ -1,12 +1,16 @@
-import { mkdtempSync, existsSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AppSettingsV1 } from '../../shared/app-settings'
-import type { ImageGenClient, ImageGenRequest } from '../../../kun/src/adapters/tool/image-gen-tool-provider.js'
+import type { ImageGenClient, ImageGenEditRequest, ImageGenRequest } from '../../../kun/src/adapters/tool/image-gen-tool-provider.js'
 import { buildWriteInfographicPrompt, requestWriteInfographic } from './write-infographic-service'
 
 let workspace: string
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64'
+)
 
 function settingsWithImageGen(overrides: Record<string, unknown> = {}): AppSettingsV1 {
   return {
@@ -26,17 +30,20 @@ function settingsWithImageGen(overrides: Record<string, unknown> = {}): AppSetti
   } as unknown as AppSettingsV1
 }
 
-function fakeClient(): ImageGenClient & { requests: ImageGenRequest[] } {
+function fakeClient(): ImageGenClient & { edits: ImageGenEditRequest[]; requests: ImageGenRequest[] } {
   const requests: ImageGenRequest[] = []
+  const edits: ImageGenEditRequest[] = []
   return {
     id: 'fake',
+    edits,
     requests,
     async generate(request) {
       requests.push(request)
       return { data: Buffer.from('fake-png-bytes'), mimeType: 'image/png' }
     },
-    async edit() {
-      throw new Error('not used')
+    async edit(request) {
+      edits.push(request)
+      return { data: Buffer.from('fake-edited-png-bytes'), mimeType: 'image/png' }
     }
   }
 }
@@ -141,6 +148,23 @@ describe('write infographic service', () => {
     expect(prompt.length).toBeLessThan(7_000)
   })
 
+  it('keeps MiniMax prompts inside the provider prompt limit', async () => {
+    const client = fakeClient()
+    const result = await requestWriteInfographic(settingsWithImageGen({
+      protocol: 'minimax-image',
+      model: 'image-01'
+    }), {
+      text: `核心结论：${'增长、留存、转化、复购、风险。'.repeat(300)}`,
+      filePath: join(workspace, 'doc.md'),
+      workspaceRoot: workspace
+    }, { client })
+
+    expect(result.ok).toBe(true)
+    expect(client.requests[0].prompt.length).toBeLessThanOrEqual(1500)
+    expect(client.requests[0].prompt).toContain('polished infographic poster')
+    expect(client.requests[0].prompt).toContain('核心结论')
+  })
+
   it('uses a custom prompt prefix when provided', () => {
     const prompt = buildWriteInfographicPrompt('内容', '请生成手绘风格的信息图。')
     expect(prompt).toBe('请生成手绘风格的信息图。\n\n内容')
@@ -202,6 +226,34 @@ describe('write infographic service', () => {
     expect(client.requests[0].size).toBe('1024x768')
     expect(client.requests[0].prompt).toContain('UI design mockup')
     expect(client.requests[0].prompt).not.toContain('infographic')
+  })
+
+  it('uses selected reference images for design drafts', async () => {
+    const client = fakeClient()
+    const referencePath = join(workspace, '.kunsdd', 'requirements', 'draft-1', 'img', 'source.png')
+    mkdirSync(dirname(referencePath), { recursive: true })
+    writeFileSync(referencePath, PNG_BYTES)
+
+    const result = await requestWriteInfographic(settingsWithImageGen(), {
+      text: '根据参考图重绘一个更精致的旅行社区首页。',
+      filePath: join(workspace, '.kunsdd', 'requirements', 'draft-1', 'requirement.md'),
+      workspaceRoot: workspace,
+      imageDir: '.kunsdd/requirements/draft-1/img',
+      kind: 'design',
+      referenceImagePath: referencePath
+    }, { client })
+
+    expect(result.ok).toBe(true)
+    expect(client.requests).toHaveLength(0)
+    expect(client.edits).toHaveLength(1)
+    expect(client.edits[0].images[0]).toMatchObject({
+      name: 'source.png',
+      mimeType: 'image/png'
+    })
+    expect(client.edits[0].prompt).toContain('旅行社区首页')
+    if (!result.ok) return
+    expect(result.relativePath).toMatch(/^img\/design-\d{14}-[0-9a-f]{4}\.png$/)
+    expect(readFileSync(result.absolutePath, 'utf8')).toBe('fake-edited-png-bytes')
   })
 
   it('prefers write.selectionAssist.designDraftPrompt for kind=design', async () => {

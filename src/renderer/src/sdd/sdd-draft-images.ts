@@ -136,7 +136,7 @@ export async function collectSddDraftImages(input: {
     // can open the file) and never read it as an image.
     if (isSddPrototypeRelativePath(normalizedPath)) continue
     if (!isSddImageRelativePath(normalizedPath)) {
-      errors.push(`SDD images must live under .kunsdd/img: ${parsed.markdownPath}`)
+      errors.push(`SDD images must live in the requirement's img directory: ${parsed.markdownPath}`)
       continue
     }
     if (seen.has(normalizedPath)) continue

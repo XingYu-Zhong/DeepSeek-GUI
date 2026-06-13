@@ -3329,6 +3329,247 @@ pre {
   position: absolute;
 }
 
+/* ---------- 唤醒加载特效(.is-waking):睡息 Zzz、声纳涟漪、气泡上浮、草稿打字 ---------- */
+/* 仅运行时连接页启用;就绪后的空状态与报错态沿用安静版舞台(#78:错误不该像还在加载) */
+
+.ds-runtime-wake-kun-bob {
+  display: inline-flex;
+  line-height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+/* 小 Kun 每隔几秒翻个身,其余时间交给形象自带的呼吸动画 */
+.is-waking .ds-runtime-wake-kun-bob {
+  animation: ds-runtime-wake-stir 8.4s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+/* Zzz 从头顶冒出,边升边飘散;锚点在小 Kun 头部上方 */
+.ds-runtime-wake-zzz {
+  pointer-events: none;
+  position: absolute;
+  left: 14px;
+  top: -4px;
+  z-index: 3;
+}
+
+.ds-runtime-wake-zzz i {
+  animation: ds-runtime-wake-zzz 3.6s ease-out infinite;
+  color: var(--ds-accent);
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  left: 0;
+  line-height: 1;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+}
+
+.ds-runtime-wake-zzz i:nth-child(2) {
+  animation-delay: 1.2s;
+  font-size: 10px;
+  left: 7px;
+}
+
+.ds-runtime-wake-zzz i:nth-child(3) {
+  animation-delay: 2.4s;
+  font-size: 11px;
+  left: -8px;
+}
+
+/* 声纳涟漪:沿核心卡片轮廓向外扩散,像在一遍遍探测运行时 */
+.ds-runtime-wake-sonar {
+  border: 1.5px solid color-mix(in srgb, var(--ds-accent) 52%, transparent);
+  border-radius: 28px;
+  inset: -4px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ds-runtime-wake-sonar.is-one {
+  animation: ds-runtime-wake-sonar 2.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
+.ds-runtime-wake-sonar.is-two {
+  animation: ds-runtime-wake-sonar 2.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) 1.45s infinite;
+}
+
+/* 深海气泡:从画布底部(模拟输入框后)缓缓上浮 */
+.ds-runtime-wake-bubbles {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ds-runtime-wake-bubbles i {
+  animation: ds-runtime-wake-bubble 5.2s ease-in infinite;
+  background: color-mix(in srgb, var(--ds-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 30%, transparent);
+  border-radius: 999px;
+  bottom: 16px;
+  height: 7px;
+  opacity: 0;
+  position: absolute;
+  width: 7px;
+}
+
+.ds-runtime-wake-bubbles i:nth-child(1) {
+  left: 18%;
+}
+
+.ds-runtime-wake-bubbles i:nth-child(2) {
+  animation-delay: 1.6s;
+  height: 5px;
+  left: 44%;
+  width: 5px;
+}
+
+.ds-runtime-wake-bubbles i:nth-child(3) {
+  animation-delay: 2.7s;
+  left: 66%;
+}
+
+.ds-runtime-wake-bubbles i:nth-child(4) {
+  animation-delay: 3.9s;
+  height: 4px;
+  left: 85%;
+  width: 4px;
+}
+
+/* 模拟输入框:小 Kun 梦里打草稿,写一段、停一停、清掉重来;光标常亮闪烁 */
+.ds-runtime-wake-caret {
+  animation: ds-runtime-wake-caret-blink 1.05s step-end infinite;
+  background: var(--ds-accent);
+  border-radius: 1px;
+  display: block;
+  flex: none;
+  height: 13px;
+  margin-left: -1px;
+  width: 2px;
+}
+
+.is-waking .ds-runtime-wake-composer span:first-child {
+  animation: ds-runtime-wake-typing 4.4s ease-in-out infinite;
+}
+
+@keyframes ds-runtime-wake-stir {
+  0%,
+  78%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+
+  84% {
+    transform: rotate(-2.4deg) translateY(-1px);
+  }
+
+  90% {
+    transform: rotate(1.8deg) translateY(0);
+  }
+
+  95% {
+    transform: rotate(-0.8deg) translateY(-0.4px);
+  }
+}
+
+@keyframes ds-runtime-wake-zzz {
+  0% {
+    opacity: 0;
+    transform: translate(0, 3px) rotate(-10deg) scale(0.6);
+  }
+
+  16% {
+    opacity: 0.92;
+  }
+
+  58% {
+    opacity: 0.66;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(8px, -26px) rotate(12deg) scale(1.12);
+  }
+}
+
+@keyframes ds-runtime-wake-sonar {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+
+  14% {
+    opacity: 0.62;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.62);
+  }
+}
+
+@keyframes ds-runtime-wake-bubble {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.7);
+  }
+
+  14% {
+    opacity: 0.5;
+  }
+
+  78% {
+    opacity: 0.34;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-7px, -58px) scale(1.08);
+  }
+}
+
+@keyframes ds-runtime-wake-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  55% {
+    opacity: 0.12;
+  }
+}
+
+@keyframes ds-runtime-wake-typing {
+  0%,
+  6% {
+    width: 14px;
+  }
+
+  20%,
+  30% {
+    width: 36px;
+  }
+
+  48%,
+  58% {
+    width: 56px;
+  }
+
+  74%,
+  86% {
+    width: 72px;
+  }
+
+  94%,
+  100% {
+    width: 14px;
+  }
+}
+
 /* ---------- 泳动模式轮播:推进中(propel,默认) / 冲刺中(sprint) / 潜入中(dive) / 冲浪中(surf) ---------- */
 /* 小鸟朝左:-x = 前进,+rotate = 抬头(逆向即低头),水花/尾迹在 +x 一侧(身后) */
 
@@ -4465,7 +4706,13 @@ pre {
   .ds-runtime-wake-flow::after,
   .ds-runtime-wake-core,
   .ds-runtime-wake-core::before,
-  .ds-runtime-wake-ring {
+  .ds-runtime-wake-ring,
+  .ds-runtime-wake-kun-bob,
+  .ds-runtime-wake-zzz i,
+  .ds-runtime-wake-sonar,
+  .ds-runtime-wake-bubbles i,
+  .ds-runtime-wake-caret,
+  .is-waking .ds-runtime-wake-composer span:first-child {
     animation: none;
   }
 }
@@ -4474,6 +4721,7 @@ pre {
 [data-focus-mode='on'] .ds-ikun-cameo-layer,
 [data-focus-mode='on'] .ds-kun-celebration-layer,
 [data-focus-mode='on'] .ds-kun-state,
+[data-focus-mode='on'] .ds-runtime-wake-zzz,
 [data-focus-mode='on'] .ds-work-logo,
 [data-focus-mode='on'] .ds-work-logo-slot:has(.ds-work-logo),
 [data-focus-mode='on'] .ds-ikun-toggle-figure {

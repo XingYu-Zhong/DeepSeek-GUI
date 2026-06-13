@@ -1,6 +1,6 @@
 /**
  * Kun-side mirror of the shared GUI plan contract from
- * DeepSeek-GUI's `src/shared/gui-plan.ts`.
+ * Kun's `src/shared/gui-plan.ts`.
  *
  * The renderer and the Kun package live in the same repo but
  * TypeScript's `rootDir` constraint prevents Kun from

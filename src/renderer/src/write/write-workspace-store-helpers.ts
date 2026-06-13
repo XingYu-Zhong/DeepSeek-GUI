@@ -32,6 +32,7 @@ import type { WritePreviewMode, WriteWorkspaceState } from './write-workspace-st
 export const WRITE_PREVIEW_MODE_KEY = 'kun.write.preview-mode'
 export const WRITE_ASSISTANT_OPEN_KEY = 'kun.write.assistant-open'
 export const WRITE_ASSISTANT_MODEL_KEY = 'kun.write.assistant-model'
+export const WRITE_ASSISTANT_PROVIDER_KEY = 'kun.write.assistant-provider'
 const DEFAULT_WRITE_ASSISTANT_MODEL = DEFAULT_KUN_MODEL
 
 export function readStoredPreviewMode(): WritePreviewMode {
@@ -52,6 +53,10 @@ export function readStoredAssistantModel(): string {
     writeBrowserStorageItem(WRITE_ASSISTANT_MODEL_KEY, normalized)
   }
   return normalized
+}
+
+export function readStoredAssistantProviderId(): string {
+  return readBrowserStorageItem(WRITE_ASSISTANT_PROVIDER_KEY)?.trim() ?? ''
 }
 
 export function normalizeWriteAssistantModel(model: string | null | undefined): string {

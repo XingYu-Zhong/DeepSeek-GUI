@@ -68,6 +68,9 @@ type Props = {
   /** Interactive HTML prototype generation; embeds a runnable page below the selection. */
   prototypeEnabled?: boolean
   onGeneratePrototype?: () => void
+  /** A raster image is selected instead of text: only image-aware actions
+   * apply, everything text-oriented is hidden. */
+  imageMode?: boolean
 }
 
 /**
@@ -165,19 +168,21 @@ export function WriteInlineAgent({
   designDraftEnabled = false,
   onGenerateDesignDraft,
   prototypeEnabled = false,
-  onGeneratePrototype
+  onGeneratePrototype,
+  imageMode = false
 }: Props): ReactElement {
   const { t } = useTranslation('common')
   const menuRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<{ top: number; origin: 'top-center' | 'bottom-center' } | null>(null)
   const [blockMenuOpen, setBlockMenuOpen] = useState(false)
 
-  const showBlockSelector = formattingEnabled && Boolean(onSetBlockType)
-  const showFormatting = formattingEnabled && Boolean(onApplyFormat)
-  const showQuickActions = quickActions.length > 0 && Boolean(onQuickAction)
-  const showInfographic = infographicEnabled && Boolean(onGenerateInfographic)
+  const showBlockSelector = !imageMode && formattingEnabled && Boolean(onSetBlockType)
+  const showFormatting = !imageMode && formattingEnabled && Boolean(onApplyFormat)
+  const showQuickActions = !imageMode && quickActions.length > 0 && Boolean(onQuickAction)
+  const showInfographic = !imageMode && infographicEnabled && Boolean(onGenerateInfographic)
   const showDesignDraft = designDraftEnabled && Boolean(onGenerateDesignDraft)
   const showPrototype = prototypeEnabled && Boolean(onGeneratePrototype)
+  const showComposer = !imageMode
   const activeBlock = BLOCK_TYPE_META[blockType] ?? BLOCK_TYPE_META.paragraph
   const ActiveBlockIcon = activeBlock.icon
 
@@ -208,6 +213,7 @@ export function WriteInlineAgent({
     showInfographic,
     showDesignDraft,
     showPrototype,
+    showComposer,
     blockMenuOpen,
     quickActions.length,
     preferAbove
@@ -379,6 +385,7 @@ export function WriteInlineAgent({
           </div>
         ) : null}
 
+        {showComposer ? (
         <form
           className="write-inline-agent-edit"
           onSubmit={(event) => {
@@ -435,6 +442,7 @@ export function WriteInlineAgent({
             )}
           </button>
         </form>
+        ) : null}
       </div>
     </div>
   )

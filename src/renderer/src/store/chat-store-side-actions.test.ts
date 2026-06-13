@@ -303,7 +303,7 @@ describe('chat-store-side-actions', () => {
       'use less reasoning',
       expect.objectContaining({
         model: 'deepseek-chat',
-        reasoningEffort: 'off'
+        reasoningEffort: 'low'
       })
     )
   })

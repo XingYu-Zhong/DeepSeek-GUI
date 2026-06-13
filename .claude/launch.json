@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dsgui-site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "/Users/zxy/codeproject/ds_project/dsgui-admin"],
+      "autoPort": true
+    },
+    {
+      "name": "renderer-live",
+      "runtimeExecutable": "sleep",
+      "runtimeArgs": ["86400"],
+      "port": 5173
+    }
+  ]
+}

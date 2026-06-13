@@ -2,7 +2,15 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { NormalizedThread } from '../../agent/types'
-import { buildSidebarWorkspaceGroups, SddDraftHistoryRows, ThreadRenameDialog } from './SidebarProjectsSection'
+import type { SddDraftHistoryItem } from '../../sdd/sdd-draft-history'
+import {
+  buildSidebarDraftWorkspacePaths,
+  buildSidebarWorkspaceGroups,
+  filterSddDraftHistoryItems,
+  mergeSidebarWorkspaceGroupsWithDraftHistory,
+  SddDraftHistoryRows,
+  ThreadRenameDialog
+} from './SidebarProjectsSection'
 
 function thread(overrides: Partial<NormalizedThread> & Pick<NormalizedThread, 'id' | 'workspace'>): NormalizedThread {
   return {
@@ -14,6 +22,20 @@ function thread(overrides: Partial<NormalizedThread> & Pick<NormalizedThread, 'i
     workspace: overrides.workspace,
     ...(overrides.preview ? { preview: overrides.preview } : {}),
     ...(overrides.archived !== undefined ? { archived: overrides.archived } : {})
+  }
+}
+
+function draft(overrides: Partial<SddDraftHistoryItem> & Pick<SddDraftHistoryItem, 'id' | 'title'>): SddDraftHistoryItem {
+  const folder = overrides.id.replace(/[^a-z0-9-]/gi, '').slice(0, 36).padEnd(36, '0')
+  return {
+    id: overrides.id,
+    workspaceRoot: overrides.workspaceRoot ?? '/tmp/app',
+    relativePath: overrides.relativePath ?? `.kunsdd/draft/${folder}/requirement.md`,
+    createdAt: overrides.createdAt ?? '2026-01-01T00:00:00.000Z',
+    updatedAt: overrides.updatedAt ?? '2026-01-02T00:00:00.000Z',
+    title: overrides.title,
+    source: overrides.source ?? 'remembered',
+    ...(overrides.searchText ? { searchText: overrides.searchText } : {})
   }
 }
 
@@ -107,6 +129,65 @@ describe('SidebarProjectsSection groups', () => {
     expect(groups[0]?.[0]).toBe('C:\\Users\\zxy\\.deepseekgui\\default_workspace')
     expect(groups[0]?.[1].map((item) => item.id)).toEqual(['default-short', 'default-absolute'])
   })
+
+  it('loads requirement histories from all known project workspaces while searching', () => {
+    const workspaces = buildSidebarDraftWorkspacePaths({
+      threads: [
+        thread({ id: 'code-current', workspace: '/Users/zxy/project-a' }),
+        thread({ id: 'write-assistant', workspace: '~/.deepseekgui/write_workspace' })
+      ],
+      workspaceRoot: '/Users/zxy/project-a',
+      workspaceRoots: [
+        '/Users/zxy/project-a',
+        '/Users/zxy/project-b',
+        '~/.deepseekgui/write_workspace'
+      ]
+    })
+
+    expect(workspaces).toEqual([
+      '/Users/zxy/project-a',
+      '/Users/zxy/project-b'
+    ])
+  })
+
+  it('merges requirement-only search matches into displayed groups', () => {
+    const groups = buildSidebarWorkspaceGroups({
+      threads: [thread({ id: 'reasonix-current', workspace: '/Users/zxy/project-a' })],
+      searchQuery: 'checkout',
+      showArchived: false,
+      workspaceRoot: '/Users/zxy/project-a',
+      workspaceRoots: ['/Users/zxy/project-a', '/Users/zxy/project-b']
+    })
+    const filteredDraftHistory = {
+      '/Users/zxy/project-b': [draft({
+        id: 'draft-checkout',
+        title: 'Checkout requirement',
+        workspaceRoot: '/Users/zxy/project-b'
+      })]
+    }
+
+    const displayGroups = mergeSidebarWorkspaceGroupsWithDraftHistory({
+      groups,
+      draftHistoryByWorkspace: filteredDraftHistory,
+      workspaceRoot: '/Users/zxy/project-a'
+    })
+
+    expect(displayGroups.map(([workspace]) => workspace)).toEqual([
+      '/Users/zxy/project-a',
+      '/Users/zxy/project-b'
+    ])
+  })
+
+  it('filters requirement drafts by title, path, workspace, and content', () => {
+    const items = [
+      draft({ id: 'draft-login', title: 'Login requirement', searchText: 'Support passkey sign-in.' }),
+      draft({ id: 'draft-export', title: 'Export requirement', searchText: 'Download reports as CSV.' })
+    ]
+
+    expect(filterSddDraftHistoryItems(items, 'passkey', '/tmp/app').map((item) => item.id)).toEqual(['draft-login'])
+    expect(filterSddDraftHistoryItems(items, 'export', '/tmp/app').map((item) => item.id)).toEqual(['draft-export'])
+    expect(filterSddDraftHistoryItems(items, 'tmp', '/tmp/app')).toHaveLength(2)
+  })
 })
 
 describe('ThreadRenameDialog', () => {
@@ -137,28 +218,34 @@ describe('ThreadRenameDialog', () => {
 })
 
 describe('SddDraftHistoryRows', () => {
-  it('renders requirement draft history rows', () => {
+  it('renders requirement draft history fully collapsed by default', () => {
     const html = renderToStaticMarkup(
       createElement(SddDraftHistoryRows, {
-        items: [{
-          id: '/tmp/app:.kunsdd/draft/123e4567-e89b-12d3-a456-426614174000/requirement.md',
-          workspaceRoot: '/tmp/app',
-          relativePath: '.kunsdd/draft/123e4567-e89b-12d3-a456-426614174000/requirement.md',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-02T00:00:00.000Z',
-          title: 'Export requirement',
-          source: 'remembered'
-        }],
+        items: [
+          draft({ id: 'draft-1', title: 'Requirement 1' }),
+          draft({ id: 'draft-2', title: 'Requirement 2' }),
+          draft({ id: 'draft-3', title: 'Requirement 3' }),
+          draft({ id: 'draft-4', title: 'Requirement 4' })
+        ],
         activeDraftId: '',
         onOpen: vi.fn(),
         t: (key: string, opts?: Record<string, unknown>) =>
-          key === 'sddDraftHistoryOpen' ? `Open ${String(opts?.title)}` : key
+          key === 'sddDraftHistoryOpen'
+            ? `Open ${String(opts?.title)}`
+            : key === 'sddDraftHistoryShowMore'
+              ? `Show ${String(opts?.count)} more`
+              : key
       })
     )
 
     expect(html).toContain('sddDraftHistoryTitle')
-    expect(html).toContain('Export requirement')
-    expect(html).toContain('.kunsdd/draft/123e4567-e89b-12d3-a456-426614174000/requirement.md')
-    expect(html).toContain('Open Export requirement')
+    expect(html).toContain('sddDraftHistoryExpand')
+    expect(html).toContain('>4<')
+    expect(html).not.toContain('Requirement 1')
+    expect(html).not.toContain('Requirement 2')
+    expect(html).not.toContain('Requirement 3')
+    expect(html).not.toContain('Requirement 4')
+    expect(html).not.toContain('Open Requirement 1')
+    expect(html).not.toContain('Show 1 more')
   })
 })

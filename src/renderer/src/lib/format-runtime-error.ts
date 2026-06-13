@@ -143,7 +143,10 @@ export function describeRuntimeError(error: unknown): RuntimeErrorView {
   const details: string[] = []
   if (errorCode) details.push(`Code: ${errorCode}`)
   if (payload?.severity) details.push(`Severity: ${payload.severity}`)
-  if (redactedText && redactedText !== summary) {
+  if (
+    redactedText &&
+    (redactedText !== summary || Boolean(errorCode) || Boolean(payload?.severity) || payload?.details !== undefined)
+  ) {
     details.push(`Message:\n${redactedText}`)
   }
   const payloadDetails = detailString(payload?.details)

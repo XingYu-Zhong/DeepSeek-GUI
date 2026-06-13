@@ -30,10 +30,11 @@ describe('MessageTimeline initial heatmap empty hero routing', () => {
     await i18n.changeLanguage('en')
   })
 
-  it('shows the Kun heatmap for eligible initial chat states', () => {
+  it('shows the collapsed Kun calendar for eligible initial chat states', () => {
     const html = renderHero()
 
-    expect(html).toContain('Kun usage')
+    expect(html).toContain('Expand calendar')
+    expect(html).not.toContain('Daily Kun usage calendar')
     expect(html).not.toContain('Start a new conversation')
   })
 

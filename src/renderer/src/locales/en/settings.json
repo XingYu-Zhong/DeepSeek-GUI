@@ -438,6 +438,7 @@
   "imageGenApiKeyDesc": "Key for the image provider. Independent from the chat model key.",
   "imageGenModel": "Image model",
   "imageGenModelDesc": "Model id sent to the provider, e.g. gpt-image-1 or Kwai-Kolors/Kolors.",
+  "imageGenModelQualityHint": "For production design drafts and infographics, prefer GPT Image or Gemini image models. Current domestic image models are still inconsistent at layout and text-heavy work, and may not meet directly usable quality standards.",
   "imageGenModelPlaceholder": "gpt-image-1",
   "imageGenDefaultSize": "Default size",
   "imageGenDefaultSizeDesc": "Optional \"WxH\" or \"auto\" used when the assistant does not pick a ratio. Leave empty for the provider default. Note: 2K previews may exceed the 5 MB attachment limit; the file is still saved to the workspace.",

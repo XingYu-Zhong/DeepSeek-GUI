@@ -13,6 +13,7 @@ import {
   mergeComposerPickList,
   newClawChannel,
   normalizeTurnModelMap,
+  reconcileCodeWorkspaceRoots,
   rememberTurnModel
 } from './chat-store-helpers'
 
@@ -126,6 +127,28 @@ describe('chat-store Claw helpers', () => {
     expect(compacted[0]).toBe('/Users/zxy/project-0')
     expect(compacted.at(-1)).toBe(`/Users/zxy/project-${MAX_CODE_WORKSPACE_ROOTS - 1}`)
     expect(compacted).not.toContain(`/Users/zxy/project-${MAX_CODE_WORKSPACE_ROOTS}`)
+  })
+
+  it('drops remembered write-only workspaces from the code workspace list', () => {
+    expect(
+      reconcileCodeWorkspaceRoots({
+        currentRoots: [
+          '/Users/zxy/code-project',
+          '/Users/zxy/CodeLLMPaper',
+          '/Users/zxy/shared-project'
+        ],
+        codeThreadWorkspaceRoots: ['/Users/zxy/shared-project'],
+        writeWorkspaceRoots: [
+          '/Users/zxy/CodeLLMPaper',
+          '/Users/zxy/shared-project'
+        ],
+        preservedWorkspaceRoots: ['/Users/zxy/active-code']
+      })
+    ).toEqual([
+      '/Users/zxy/shared-project',
+      '/Users/zxy/code-project',
+      '/Users/zxy/active-code'
+    ])
   })
 
   it('collects channel and conversation thread ids for Claw sessions', () => {

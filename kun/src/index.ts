@@ -1,7 +1,7 @@
 /**
  * Kun public surface.
  *
- * The package exposes a small set of named entrypoints that the DeepSeek-GUI
+ * The package exposes a small set of named entrypoints that the Kun
  * main process and CLI use. The submodules contain the actual implementation
  * and additional re-exports.
  */

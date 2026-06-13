@@ -23,7 +23,7 @@ my-plugin/
 
 安装方式:`设置 → 形象工坊 → 安装插件文件夹…`,选中插件目录即可。
 应用会校验 manifest 后把 **manifest 和被引用到的图片** 复制进应用数据目录
-(`<userData>/ui-plugins/<id>/`),源目录中的其它文件一律不会被复制。
+(`~/.kun/ui-plugins/<id>/`),源目录中的其它文件一律不会被复制。
 
 官方示例见 [`examples/ui-plugins/starlight/`](../examples/ui-plugins/starlight/)。
 

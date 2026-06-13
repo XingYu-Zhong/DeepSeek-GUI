@@ -5,7 +5,7 @@ import {
   IMAGE_GENERATION_PROTOCOLS,
   resolveKunImageGenerationSettings
 } from '@shared/app-settings'
-import { ModelSelect, SecretInput, SettingsCard, SettingRow, Toggle } from './settings-controls'
+import { InlineNoticeView, ModelSelect, SecretInput, SettingsCard, SettingRow, Toggle } from './settings-controls'
 
 const DEFAULT_IMAGE_GENERATION = {
   enabled: false,
@@ -184,6 +184,9 @@ export function ImageGenerationSettingsSection({ ctx }: { ctx: Record<string, an
               </div>
             }
           />
+          <div className="px-3 py-3">
+            <InlineNoticeView notice={{ tone: 'info', message: t('imageGenModelQualityHint') }} />
+          </div>
           <SettingRow
             title={t('imageGenDefaultSize')}
             description={t('imageGenDefaultSizeDesc')}

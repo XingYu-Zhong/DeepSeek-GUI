@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { ArrowRight, FileText, Loader2, Save, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
-import { SDD_IMAGE_RELATIVE_DIR, SDD_PROTO_RELATIVE_DIR } from '@shared/sdd'
+import { sddUnitImageDir, sddUnitProtoDir } from '@shared/sdd'
 import { parseSddRequirementBlocks } from '@shared/sdd-trace'
 import { WRITE_INFOGRAPHIC_MAX_TEXT_CHARS, type WriteInfographicKind } from '@shared/write-infographic'
 import { WRITE_PROTOTYPE_MAX_TEXT_CHARS } from '@shared/write-prototype'
 import { useSddTrace } from '../../sdd/use-sdd-trace'
 import { useSddDraftStore } from '../../sdd/sdd-draft-store'
 import { saveActiveSddDraftToDisk, syncActiveSddDraftFromDisk } from '../../sdd/sdd-draft-actions'
+import { buildSddPrototypeTurnPrompt } from '../../sdd/sdd-prototype-prompt'
 import { useWriteWorkspaceStore } from '../../write/write-workspace-store'
 import { startWriteWorkspaceFileWatch } from '../../write/write-file-watch'
 import {
@@ -24,6 +25,8 @@ import {
   formatWriteQuotedSelectionForPrompt,
   quotedSelectionFromEditor
 } from '../../write/quoted-selection'
+import { parseImageMarkdownLine } from '../../write/selected-image'
+import { resolveWriteMarkdownResourcePath } from '@shared/write-markdown-resource'
 import {
   beginPendingInfographic,
   buildPendingInfographicMarkdown,
@@ -32,7 +35,11 @@ import {
   replacePendingInfographicInText,
   type PendingInfographicKind
 } from '../../write/infographic-pending'
-import { WriteMarkdownEditor, type WriteMarkdownEditorHandle } from '../write/WriteMarkdownEditor'
+import {
+  WriteMarkdownEditor,
+  type WriteMarkdownEditorHandle,
+  type WriteSelectedImage
+} from '../write/WriteMarkdownEditor'
 import { WriteRichEditor, type WriteRichEditorHandle } from '../../write/tiptap/WriteRichEditor'
 import { WriteInlineAgent } from '../write/WriteInlineAgent'
 import {
@@ -44,6 +51,35 @@ import {
 import { SidebarTitlebarToggleButton } from '../sidebar/SidebarPrimitives'
 
 const SDD_AUTOSAVE_MS = 650
+const PROTOTYPE_POLL_INTERVAL_MS = 4_000
+const PROTOTYPE_POLL_TIMEOUT_MS = 5 * 60_000
+
+function randomPrototypeFileName(): string {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+  const hex = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0')
+  return `prototype-${stamp}-${hex}.html`
+}
+
+function firstMeaningfulDraftLine(markdown: string, fallback: string): string {
+  const line = markdown
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^#{1,6}\s+/, '').trim())
+    .find(Boolean)
+  return (line || fallback).slice(0, 240)
+}
+
+function designReferenceTextFromImage(
+  image: WriteSelectedImage,
+  markdown: string,
+  fallbackPath: string
+): string {
+  return [
+    'Use the attached reference image as the primary visual basis for a refreshed high-fidelity UI design mockup.',
+    image.alt.trim() ? `Reference image label: ${image.alt.trim()}` : '',
+    `Requirement context: ${firstMeaningfulDraftLine(markdown, fallbackPath)}`,
+    'Preserve the visible information architecture and key UI elements, while improving polish, hierarchy, spacing, and component consistency.'
+  ].filter(Boolean).join('\n')
+}
 
 type Props = {
   leftSidebarCollapsed: boolean
@@ -52,6 +88,14 @@ type Props = {
   onToggleAssistant: () => void
   /** Quote-and-ask from the selection toolbar: opens the assistant panel with the prompt queued. */
   onAssistantQuote: (prompt: string) => void
+  /** Dispatch a prototype-generation turn to the sidebar assistant (handles
+   * the vision-model gate and image attachment). Resolves false when nothing
+   * was sent (cancelled, busy plan, no thread). */
+  onPrototypeTurn: (payload: {
+    prompt: string
+    displayText: string
+    image?: { absolutePath: string; alt: string }
+  }) => Promise<boolean>
   onNext: () => void
   onClose: () => void
   nextDisabled: boolean
@@ -132,6 +176,7 @@ export function SddDraftEditorView({
   onToggleLeftSidebar,
   onToggleAssistant,
   onAssistantQuote,
+  onPrototypeTurn,
   onNext,
   onClose,
   nextDisabled
@@ -325,8 +370,17 @@ export function SddDraftEditorView({
   // must always receive an absolute document path.
   const docAbsolutePath =
     activeDraft.absolutePath ?? `${activeDraft.workspaceRoot}/${activeDraft.relativePath}`
+  // Per-requirement asset directories inside the unit folder; null only for
+  // non-conforming paths, which the registry filter prevents in practice.
+  const unitImageDir = sddUnitImageDir(activeDraft.relativePath)
+  const unitProtoDir = sddUnitProtoDir(activeDraft.relativePath)
+  const imageSelectionActive = Boolean(selection.selectedImage) && selection.charCount === 0
+  const imageSelectionActionReady = imageSelectionActive && (prototypeReady || imageGenReady) && !readOnly
   const selectionAction =
-    selection.charCount > 0 && !pointerSelecting ? inlineAgentPosition(selection) : null
+    (selection.charCount > 0 || imageSelectionActionReady) &&
+    !pointerSelecting
+      ? inlineAgentPosition(selection)
+      : null
   // Edit-mode quick actions rewrite the document, so drop them while the doc
   // is read-only (plan generation); chat-mode actions still apply.
   const inlineQuickActions = resolveWriteQuickActions(selectionAssist.quickActions, t).filter(
@@ -539,7 +593,11 @@ export function SddDraftEditorView({
   // Inserts an animated placeholder right away and resolves it in the
   // background, so generation never blocks the editor.
   const generateImage = (kind: WriteInfographicKind): void => {
-    if (readOnly) return
+    if (readOnly || !unitImageDir) return
+    if (selection.selectedImage && kind === 'design') {
+      void generateDesignDraftFromImage(selection.selectedImage)
+      return
+    }
     if (selection.ranges.length !== 1 || !selection.text.trim()) {
       setOperationStatus('error', t('writeInlineEditNoSelection'))
       return
@@ -558,16 +616,68 @@ export function SddDraftEditorView({
     void completeImageGeneration({ kind, ...job })
   }
 
+  const generateDesignDraftFromImage = async (image: WriteSelectedImage): Promise<void> => {
+    if (readOnly || !unitImageDir) return
+    if (typeof window.kunGui?.generateWriteInfographic !== 'function') {
+      setOperationStatus('error', t('writeInfographicUnavailable'))
+      return
+    }
+    const absoluteImagePath = resolveWriteMarkdownResourcePath(image.src, editorFilePath)
+    if (!absoluteImagePath) {
+      setOperationStatus('error', t('writeHtmlEmbedMissing'))
+      return
+    }
+    const altText = t('writeDesignDraftAlt')
+    const pending = beginPendingInfographic('design')
+    const pendingMarkdown = buildPendingInfographicMarkdown(altText, pending.src)
+    const insertion = `\n\n${pendingMarkdown}\n`
+    const richHandle = richHandleRef.current
+    if (richHandle) {
+      if (!richHandle.insertMarkdownAfterImage(image.src, insertion)) {
+        finishPendingInfographic(pending.id)
+        setOperationStatus('error', t('writeInlineEditChanged'))
+        return
+      }
+    } else {
+      const latest = useSddDraftStore.getState()
+      const line = image.line
+      if (
+        latest.activeDraft?.id !== draftId ||
+        !line ||
+        parseImageMarkdownLine(latest.content.slice(line.from, line.to))?.src !== image.src
+      ) {
+        finishPendingInfographic(pending.id)
+        setOperationStatus('error', t('writeInlineEditChanged'))
+        return
+      }
+      setContent(latest.content.slice(0, line.to) + insertion + latest.content.slice(line.to))
+    }
+    setSelection({ text: '', ranges: [], charCount: 0 })
+    setOperationStatus('idle')
+    void completeImageGeneration({
+      kind: 'design',
+      id: pending.id,
+      src: pending.src,
+      pendingMarkdown,
+      altText,
+      text: designReferenceTextFromImage(image, content, activeDraft.relativePath),
+      referenceImagePath: absoluteImagePath
+    })
+  }
+
   const generatePrototype = (): void => {
     if (readOnly) return
+    if (selection.selectedImage) {
+      void generatePrototypeFromImage(selection.selectedImage)
+      return
+    }
     if (selection.ranges.length !== 1 || !selection.text.trim()) {
       setOperationStatus('error', t('writeInlineEditNoSelection'))
       return
     }
-    if (typeof window.kunGui?.generateWritePrototype !== 'function') {
-      setOperationStatus('error', t('writePrototypeUnavailable'))
-      return
-    }
+    if (!unitProtoDir) return
+    const text = selection.text.trim().slice(0, WRITE_PROTOTYPE_MAX_TEXT_CHARS)
+    const fileName = randomPrototypeFileName()
     const job = insertPendingPlaceholder(
       'prototype',
       t('writePrototypeAlt'),
@@ -575,42 +685,156 @@ export function SddDraftEditorView({
       WRITE_PROTOTYPE_MAX_TEXT_CHARS
     )
     if (!job) return
-    void completePrototypeGeneration(job)
+    void dispatchPrototypeTurn(job, fileName, {
+      prompt: buildSddPrototypeTurnPrompt({
+        mode: 'text',
+        text,
+        prototypeRelativePath: `${unitProtoDir}/${fileName}`,
+        workspaceRoot: draftWorkspaceRoot,
+        customPrompt: selectionAssist.prototypePrompt
+      }),
+      displayText: t('writePrototypeGenerate')
+    })
   }
 
-  const completePrototypeGeneration = async (job: {
-    id: string
-    src: string
-    pendingMarkdown: string
-    altText: string
-    text: string
-  }): Promise<void> => {
-    let replacementMarkdown: string | null = null
-    let failureMessage: string | null = null
-    try {
-      const result = await window.kunGui.generateWritePrototype({
-        text: job.text,
-        filePath: docAbsolutePath,
-        workspaceRoot: draftWorkspaceRoot,
-        outputDir: SDD_PROTO_RELATIVE_DIR
-      })
-      if (result.ok) {
-        replacementMarkdown = `![${job.altText}](${result.relativePath})`
-      } else {
-        failureMessage = result.message
+  const generatePrototypeFromImage = async (image: WriteSelectedImage): Promise<void> => {
+    if (readOnly || !unitProtoDir) return
+    const absoluteImagePath = resolveWriteMarkdownResourcePath(image.src, editorFilePath)
+    if (!absoluteImagePath) {
+      setOperationStatus('error', t('writeHtmlEmbedMissing'))
+      return
+    }
+    const fileName = randomPrototypeFileName()
+    const altText = t('writePrototypeAlt')
+    const pending = beginPendingInfographic('prototype')
+    const pendingMarkdown = buildPendingInfographicMarkdown(altText, pending.src)
+    const insertion = `\n\n${pendingMarkdown}\n`
+    const richHandle = richHandleRef.current
+    if (richHandle) {
+      if (!richHandle.insertMarkdownAfterImage(image.src, insertion)) {
+        finishPendingInfographic(pending.id)
+        setOperationStatus('error', t('writeInlineEditChanged'))
+        return
       }
+    } else {
+      const latest = useSddDraftStore.getState()
+      const line = image.line
+      if (
+        latest.activeDraft?.id !== draftId ||
+        !line ||
+        parseImageMarkdownLine(latest.content.slice(line.from, line.to))?.src !== image.src
+      ) {
+        finishPendingInfographic(pending.id)
+        setOperationStatus('error', t('writeInlineEditChanged'))
+        return
+      }
+      setContent(latest.content.slice(0, line.to) + insertion + latest.content.slice(line.to))
+    }
+    setSelection({ text: '', ranges: [], charCount: 0 })
+    setOperationStatus('idle')
+    await dispatchPrototypeTurn(
+      { id: pending.id, src: pending.src, pendingMarkdown, altText, text: '' },
+      fileName,
+      {
+        prompt: buildSddPrototypeTurnPrompt({
+          mode: 'image',
+          prototypeRelativePath: `${unitProtoDir}/${fileName}`,
+          workspaceRoot: draftWorkspaceRoot,
+          customPrompt: selectionAssist.prototypePrompt
+        }),
+        displayText: t('writePrototypeGenerate'),
+        image: { absolutePath: absoluteImagePath, alt: image.alt }
+      }
+    )
+  }
+
+  const dispatchPrototypeTurn = async (
+    job: { id: string; src: string; pendingMarkdown: string; altText: string; text: string },
+    fileName: string,
+    payload: { prompt: string; displayText: string; image?: { absolutePath: string; alt: string } }
+  ): Promise<void> => {
+    let sent = false
+    try {
+      sent = await onPrototypeTurn(payload)
     } catch (err) {
-      failureMessage = err instanceof Error ? err.message : String(err)
-    } finally {
+      setOperationStatus('error', t('writePrototypeFailed', {
+        message: err instanceof Error ? err.message : String(err)
+      }))
+    }
+    if (!sent) {
       finishPendingInfographic(job.id)
+      void resolvePendingImage(job, null)
+      return
+    }
+    startPrototypePoll(job, fileName)
+  }
+
+  /** Watch for the agent-written prototype file and swap the placeholder.
+   * Polling (not busy-edges) so queued turns and thread switches stay safe;
+   * the closure captures the draft context and survives unmount. */
+  const startPrototypePoll = (
+    job: { id: string; src: string; pendingMarkdown: string; altText: string },
+    fileName: string
+  ): void => {
+    const prototypePath = `${unitProtoDir}/${fileName}`
+    // proto/ sits next to requirement.md inside the unit directory.
+    const replacementMarkdown = `![${job.altText}](proto/${fileName})`
+    const startedAt = Date.now()
+
+    const placeholderStillPresent = async (): Promise<boolean> => {
+      const latest = useSddDraftStore.getState()
+      if (latest.activeDraft?.id === draftId) {
+        return latest.content.includes(job.pendingMarkdown)
+      }
+      if (typeof window.kunGui?.readWorkspaceFile !== 'function') return true
+      try {
+        const file = await window.kunGui.readWorkspaceFile({
+          path: docAbsolutePath,
+          workspaceRoot: draftWorkspaceRoot
+        })
+        return !file.ok || file.content.includes(job.pendingMarkdown)
+      } catch {
+        return true
+      }
     }
 
-    const applied = await resolvePendingImage(job, replacementMarkdown)
-    if (failureMessage) {
-      setOperationStatus('error', t('writePrototypeFailed', { message: failureMessage }))
-    } else if (applied) {
-      setNotice({ tone: 'success', message: t('writePrototypeReady') })
+    // The agent writes incrementally (skeleton first, then edits), so a
+    // closing </html> alone is not "done": require the content to also be
+    // stable across two consecutive ticks before swapping the placeholder.
+    let lastContent: string | null = null
+    const tick = async (): Promise<void> => {
+      try {
+        const file = await window.kunGui.readWorkspaceFile({
+          path: prototypePath,
+          workspaceRoot: draftWorkspaceRoot
+        })
+        if (file.ok && file.content.includes('</html>')) {
+          if (file.content === lastContent) {
+            finishPendingInfographic(job.id)
+            const applied = await resolvePendingImage(job, replacementMarkdown)
+            if (applied) setNotice({ tone: 'success', message: t('writePrototypeReady') })
+            return
+          }
+          lastContent = file.content
+        }
+      } catch {
+        // File not there yet (or transient IO failure) — keep waiting.
+      }
+      if (!(await placeholderStillPresent())) {
+        // The user deleted the placeholder: treat as cancelled.
+        finishPendingInfographic(job.id)
+        return
+      }
+      if (Date.now() - startedAt > PROTOTYPE_POLL_TIMEOUT_MS) {
+        finishPendingInfographic(job.id)
+        await resolvePendingImage(job, null)
+        setOperationStatus('error', t('writePrototypeTimeout'))
+        return
+      }
+      window.setTimeout(() => void tick(), PROTOTYPE_POLL_INTERVAL_MS)
     }
+
+    window.setTimeout(() => void tick(), PROTOTYPE_POLL_INTERVAL_MS)
   }
 
   const completeImageGeneration = async (job: {
@@ -620,6 +844,7 @@ export function SddDraftEditorView({
     pendingMarkdown: string
     altText: string
     text: string
+    referenceImagePath?: string
   }): Promise<void> => {
     let replacementMarkdown: string | null = null
     let failureMessage: string | null = null
@@ -628,8 +853,9 @@ export function SddDraftEditorView({
         text: job.text,
         filePath: docAbsolutePath,
         workspaceRoot: draftWorkspaceRoot,
-        imageDir: SDD_IMAGE_RELATIVE_DIR,
-        kind: job.kind
+        ...(unitImageDir ? { imageDir: unitImageDir } : {}),
+        kind: job.kind,
+        ...(job.referenceImagePath ? { referenceImagePath: job.referenceImagePath } : {})
       })
       if (result.ok) {
         replacementMarkdown = `![${job.altText}](${result.relativePath})`
@@ -818,7 +1044,7 @@ export function SddDraftEditorView({
             value={content}
             workspaceRoot={activeDraft.workspaceRoot}
             filePath={editorFilePath}
-            imageDirectory={SDD_IMAGE_RELATIVE_DIR}
+            imageDirectory={unitImageDir ?? undefined}
             readOnly={readOnly}
             requirementBadges
             handleRef={richHandleRef}
@@ -846,7 +1072,7 @@ export function SddDraftEditorView({
                 value={content}
                 workspaceRoot={activeDraft.workspaceRoot}
                 filePath={editorFilePath}
-                imageDirectory={SDD_IMAGE_RELATIVE_DIR}
+                imageDirectory={unitImageDir ?? undefined}
                 appearance="live"
                 livePreviewEnabled
                 readOnly={readOnly}
@@ -897,6 +1123,7 @@ export function SddDraftEditorView({
           onGenerateDesignDraft={() => generateImage('design')}
           prototypeEnabled={prototypeReady && !readOnly}
           onGeneratePrototype={generatePrototype}
+          imageMode={imageSelectionActive}
         />
       ) : null}
 

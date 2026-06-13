@@ -35,4 +35,25 @@ describe('format runtime error', () => {
     expect(getRuntimeErrorCode(error)).toBe('fetch_failed')
     expect(formatRuntimeError(error)).toBe(i18n.t('common:runtimeFetchFailed'))
   })
+
+  it('keeps raw provider messages visible in details even when the summary is the same text', () => {
+    const message = `model request failed with status 400: ${JSON.stringify({
+      error: {
+        code: '400',
+        message: `Not supported model ${'mimo-v2.5-pro-ultraspeed'.repeat(20)}`
+      }
+    })}`
+    const error = new Error(JSON.stringify({
+      code: 'http_400',
+      message,
+      severity: 'error'
+    }))
+
+    const view = describeRuntimeError(error)
+
+    expect(view.summary).toBe(message)
+    expect(view.detail).toContain('Code: http_400')
+    expect(view.detail).toContain('Severity: error')
+    expect(view.detail).toContain(`Message:\n${message}`)
+  })
 })

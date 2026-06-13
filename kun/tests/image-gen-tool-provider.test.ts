@@ -8,6 +8,7 @@ import { LocalToolHost } from '../src/adapters/tool/local-tool-host.js'
 import {
   buildImageGenToolProviders,
   mapImageSize,
+  MiniMaxImageClient,
   minimaxImageDimensionFields,
   openAiCompatImageUrl,
   type ImageGenClient
@@ -149,6 +150,40 @@ describe('Image gen tool provider', () => {
     expect(minimaxImageDimensionFields('image-01-live', undefined)).toEqual({})
     expect(minimaxImageDimensionFields('image-01-live', 'auto')).toEqual({})
     expect(minimaxImageDimensionFields('image-01', '0x0')).toEqual({})
+  })
+
+  it('enables MiniMax prompt optimization for image requests', async () => {
+    const requests: Array<{ url: string; body: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), body: String(init?.body) })
+      return new Response(JSON.stringify({
+        data: { image_base64: [png(8, 8).toString('base64')] },
+        base_resp: { status_code: 0 }
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }))
+    const client = new MiniMaxImageClient('https://api.minimaxi.com', 'sk-test')
+
+    await client.generate({
+      prompt: 'short prompt',
+      model: 'image-01',
+      size: '1024x768',
+      timeoutMs: 1_000,
+      signal: new AbortController().signal
+    })
+
+    expect(requests[0].url).toBe('https://api.minimaxi.com/v1/image_generation')
+    expect(JSON.parse(requests[0].body)).toMatchObject({
+      model: 'image-01',
+      prompt: 'short prompt',
+      width: 1024,
+      height: 768,
+      prompt_optimizer: true,
+      response_format: 'base64',
+      n: 1
+    })
   })
 
   it('inserts /v1 into unversioned OpenAI-compat image base urls like the chat client', () => {
@@ -376,6 +411,28 @@ describe('Image gen tool provider', () => {
           message: expect.stringContaining('retry generate_image without reference_image_paths')
         }
       })
+    }
+  })
+
+  it('keeps the full provider HTTP error body in image generation errors', async () => {
+    const providerMessage = `Not supported model ${'mimo-v2.5-pro-ultraspeed'.repeat(40)}`
+    const body = JSON.stringify({ error: { code: '400', message: providerMessage } })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 400 })))
+    const host = new LocalToolHost({
+      registry: new CapabilityRegistry(buildImageGenToolProviders(imageGenConfig()).providers)
+    })
+
+    const result = await host.execute({
+      callId: 'call_1',
+      toolName: 'generate_image',
+      arguments: { prompt: 'draw a poster' }
+    }, buildContext())
+
+    expect(result.item).toMatchObject({ kind: 'tool_result', isError: true })
+    if (result.item.kind === 'tool_result') {
+      const output = result.item.output as { error: { message: string } }
+      expect(output.error.message).toBe(`HTTP 400: ${body}`)
+      expect(output.error.message).toContain(providerMessage)
     }
   })
 

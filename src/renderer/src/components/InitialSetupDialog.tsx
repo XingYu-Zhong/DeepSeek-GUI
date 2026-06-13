@@ -2,7 +2,6 @@ import { type ReactElement, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DEFAULT_MODEL_PROVIDER_ID,
-  MODEL_PROVIDER_PRESETS,
   normalizeAppSettings,
   type AppSettingsPatch,
   type AppSettingsV1,
@@ -10,6 +9,7 @@ import {
 } from '@shared/app-settings'
 import {
   buildInitialSetupSettings,
+  INITIAL_SETUP_PROVIDER_PRESETS,
   initialSetupAutoWirePlan,
   initialSetupDrafts,
   initialSetupProfileId,
@@ -18,9 +18,11 @@ import {
   type InitialSetupSelection
 } from './initial-setup-save'
 import { rendererRuntimeClient } from '../agent/runtime-client'
+import type { RuntimeConnectionStatus } from '../agent/types'
 import { applyTheme } from '../lib/apply-theme'
 import { emitRendererSettingsChanged } from '../lib/keyboard-shortcut-settings'
 import { useChatStore } from '../store/chat-store'
+import type { InitialSetupMode } from '../store/chat-store-types'
 import {
   Eye,
   EyeOff,
@@ -37,6 +39,10 @@ import {
 
 type ThemePref = AppSettingsV1['theme']
 type SetupFormPatch = AppSettingsPatch
+type InitialSetupCompletionState = {
+  runtimeConnection: RuntimeConnectionStatus
+  error: string | null
+}
 
 const themeOptions: { value: ThemePref; icon: typeof Sun; labelKey: string }[] = [
   { value: 'system', icon: Monitor, labelKey: 'themeSystem' },
@@ -61,7 +67,7 @@ const PROVIDER_CARDS: SetupProviderCard[] = [
     capability: null,
     preset: null
   },
-  ...MODEL_PROVIDER_PRESETS.map((preset) => ({
+  ...INITIAL_SETUP_PROVIDER_PRESETS.map((preset) => ({
     presetId: preset.id,
     name: preset.name,
     descKey: preset.id === 'xiaomi' ? 'firstRunProviderXiaomiDesc' : 'firstRunProviderMinimaxDesc',
@@ -90,6 +96,38 @@ function keyPlaceholder(card: SetupProviderCard, mode: InitialSetupSelection['mo
   return card.presetId === 'minimax' ? 'API Key' : 'sk-...'
 }
 
+export function canCloseInitialSetup(mode: InitialSetupMode): boolean {
+  return mode === 'preview'
+}
+
+export async function completeInitialSetupAfterSave(input: {
+  mode: InitialSetupMode
+  reloadUiSettings: () => Promise<void>
+  probeRuntime: (mode?: 'user' | 'background') => Promise<void>
+  openCode: () => Promise<void>
+  closeInitialSetup: () => void
+  getState: () => InitialSetupCompletionState
+  setDialogError: (message: string) => void
+  fallbackRuntimeError: string
+}): Promise<boolean> {
+  await input.reloadUiSettings()
+  if (input.mode === 'preview') {
+    void input.probeRuntime('background')
+    input.closeInitialSetup()
+    return true
+  }
+
+  await input.probeRuntime('user')
+  const state = input.getState()
+  if (state.runtimeConnection !== 'ready') {
+    input.setDialogError(state.error?.trim() || input.fallbackRuntimeError)
+    return false
+  }
+  await input.openCode()
+  input.closeInitialSetup()
+  return true
+}
+
 export function InitialSetupDialog(): ReactElement {
   const { t } = useTranslation('settings')
   const initialSetupMode = useChatStore((s) => s.initialSetupMode)
@@ -97,6 +135,7 @@ export function InitialSetupDialog(): ReactElement {
   const applyI18n = useChatStore((s) => s.applyI18nFromSettings)
   const reloadUiSettings = useChatStore((s) => s.reloadUiSettings)
   const probeRuntime = useChatStore((s) => s.probeRuntime)
+  const openCode = useChatStore((s) => s.openCode)
 
   const [form, setForm] = useState<AppSettingsV1 | null>(null)
   const [drafts, setDrafts] = useState<InitialSetupDrafts | null>(null)
@@ -109,6 +148,7 @@ export function InitialSetupDialog(): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const formRef = useRef<AppSettingsV1 | null>(null)
   const isPreview = initialSetupMode === 'preview'
+  const closeAllowed = canCloseInitialSetup(initialSetupMode)
 
   const setCurrentForm = (next: AppSettingsV1 | null): void => {
     formRef.current = next
@@ -148,6 +188,7 @@ export function InitialSetupDialog(): ReactElement {
   }
 
   const handleClose = () => {
+    if (!closeAllowed) return
     setError(null)
     closeInitialSetup()
     void reloadUiSettings()
@@ -202,9 +243,16 @@ export function InitialSetupDialog(): ReactElement {
       setDrafts(initialSetupDrafts(next))
       emitRendererSettingsChanged(next)
       await applyI18n(next.locale)
-      await reloadUiSettings()
-      void probeRuntime('background')
-      closeInitialSetup()
+      await completeInitialSetupAfterSave({
+        mode: initialSetupMode,
+        reloadUiSettings,
+        probeRuntime,
+        openCode,
+        closeInitialSetup,
+        getState: useChatStore.getState,
+        setDialogError: setError,
+        fallbackRuntimeError: t('common:runtimeFetchFailed')
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -282,15 +330,17 @@ export function InitialSetupDialog(): ReactElement {
               <Sparkles className="h-3.5 w-3.5" strokeWidth={1.9} />
               <span className="min-w-0 truncate">{t(isPreview ? 'firstRunPreviewBadge' : 'firstRunBadge')}</span>
             </div>
-            <button
-              type="button"
-              onClick={handleClose}
-              aria-label={t('firstRunClose')}
-              title={t('firstRunClose')}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300/80 bg-white/72 text-slate-500 transition hover:border-slate-400 hover:text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:border-white/18 dark:hover:text-slate-200"
-            >
-              <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
-            </button>
+            {closeAllowed ? (
+              <button
+                type="button"
+                onClick={handleClose}
+                aria-label={t('firstRunClose')}
+                title={t('firstRunClose')}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300/80 bg-white/72 text-slate-500 transition hover:border-slate-400 hover:text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:border-white/18 dark:hover:text-slate-200"
+              >
+                <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              </button>
+            ) : null}
           </div>
           <h1 id="initial-setup-title" className="mt-3 text-xl font-semibold leading-tight text-slate-900 dark:text-white sm:mt-4 sm:text-[22px]">
             {t('firstRunTitle')}
@@ -508,14 +558,16 @@ export function InitialSetupDialog(): ReactElement {
             </div>
           )}
 
-          <div className="flex flex-col-reverse gap-3 sm:grid sm:grid-cols-[0.85fr_1fr]">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="min-h-11 rounded-xl border border-slate-300/80 bg-white/75 px-4 py-2 text-[15px] font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-white/16 dark:hover:bg-white/[0.06]"
-            >
-              {t('firstRunClose')}
-            </button>
+          <div className={closeAllowed ? 'flex flex-col-reverse gap-3 sm:grid sm:grid-cols-[0.85fr_1fr]' : 'grid gap-3'}>
+            {closeAllowed ? (
+              <button
+                type="button"
+                onClick={handleClose}
+                className="min-h-11 rounded-xl border border-slate-300/80 bg-white/75 px-4 py-2 text-[15px] font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-white/16 dark:hover:bg-white/[0.06]"
+              >
+                {t('firstRunClose')}
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={saving}

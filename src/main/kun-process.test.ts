@@ -226,6 +226,37 @@ describe('resolveKunDataDir', () => {
   })
 })
 
+describe('parseListeningPidsFromNetstat', () => {
+  it('extracts the listening TCP PIDs for the port across IPv4/IPv6, ignoring everything else', async () => {
+    const { parseListeningPidsFromNetstat } = await import('./kun-process')
+    const output = [
+      '',
+      'Active Connections',
+      '',
+      '  Proto  Local Address          Foreign Address        State           PID',
+      '  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1010',
+      '  TCP    127.0.0.1:8899         0.0.0.0:0              LISTENING       6789',
+      '  TCP    [::1]:8899             [::]:0                 LISTENING       6789',
+      '  TCP    127.0.0.1:8899         127.0.0.1:51000        ESTABLISHED     7000',
+      '  TCP    127.0.0.1:18899        0.0.0.0:0              LISTENING       8000',
+      '  UDP    0.0.0.0:8899           *:*                                    9000',
+      `  TCP    127.0.0.1:8899         0.0.0.0:0              LISTENING       ${process.pid}`,
+      ''
+    ].join('\r\n')
+
+    // Dedups IPv4+IPv6 rows for the same PID; excludes the :135 listener, the
+    // ESTABLISHED row, the :18899 suffix collision, the UDP row, and our own PID.
+    expect(parseListeningPidsFromNetstat(output, 8899)).toEqual([6789])
+  })
+
+  it('returns no PIDs when nothing listens on the port', async () => {
+    const { parseListeningPidsFromNetstat } = await import('./kun-process')
+    const output = '  TCP    127.0.0.1:8899         0.0.0.0:0              LISTENING       6789'
+
+    expect(parseListeningPidsFromNetstat(output, 9999)).toEqual([])
+  })
+})
+
 describe('syncGuiManagedKunConfig', () => {
   it('creates GUI-managed config with attachments enabled for image paste/upload', async () => {
     if (!tempRoot) throw new Error('temp root not initialized')

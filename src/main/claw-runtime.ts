@@ -79,6 +79,11 @@ type FeishuClawChannel = ClawImChannelV1 & {
   platformCredential: ClawImFeishuPlatformCredentialV1
 }
 
+type IncomingRemoteSession = Pick<
+  ClawImRemoteSessionV1,
+  'chatId' | 'messageId' | 'threadId' | 'senderId' | 'senderName'
+>
+
 function hasFeishuPlatformCredential(channel: ClawImChannelV1): channel is FeishuClawChannel {
   return channel.platformCredential?.kind === 'feishu' &&
     !!channel.platformCredential.appId.trim() &&
@@ -93,6 +98,69 @@ function isMissingThreadResult(result: { ok: boolean; status: number; body: stri
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function fallbackWeixinRemoteSession(
+  payload: Record<string, unknown>,
+  senderLabel: string
+): IncomingRemoteSession | null {
+  const message = nestedRecord(payload.message)
+  const data = nestedRecord(payload.data)
+  const chatId = asString(
+    payload.chatId ||
+    payload.chat_id ||
+    payload.open_chat_id ||
+    payload.from ||
+    payload.conversationId ||
+    payload.conversation_id ||
+    message.chatId ||
+    message.chat_id ||
+    message.from ||
+    message.sender ||
+    data.chatId ||
+    data.chat_id ||
+    data.from ||
+    data.sender ||
+    senderLabel
+  )
+  if (!chatId || chatId === 'webhook' || chatId === 'WeChat') return null
+  const messageId = asString(
+    payload.messageId ||
+    payload.message_id ||
+    message.messageId ||
+    message.message_id ||
+    data.messageId ||
+    data.message_id
+  ) || `wx_${randomUUID()}`
+  const threadId = asString(
+    payload.threadId ||
+    payload.thread_id ||
+    message.threadId ||
+    message.thread_id ||
+    data.threadId ||
+    data.thread_id
+  )
+  const senderId = asString(
+    payload.senderId ||
+    payload.sender_id ||
+    message.senderId ||
+    message.sender_id ||
+    message.sender ||
+    data.senderId ||
+    data.sender_id ||
+    data.sender
+  ) || chatId
+  const senderName = asString(
+    payload.senderName ||
+    payload.sender_name ||
+    message.senderName ||
+    message.sender_name ||
+    message.sender ||
+    data.senderName ||
+    data.sender_name ||
+    data.sender
+  ) || chatId
+  return { chatId, messageId, threadId, senderId, senderName }
 }
 
 function isChineseLocale(settings: AppSettingsV1): boolean {
@@ -1814,7 +1882,8 @@ export class ClawRuntime {
         : settings.claw.channels.find(
             (item) => item.enabled && item.provider === provider
           )
-      const remoteSession = extractIncomingRemoteSession(payload)
+      const remoteSession = extractIncomingRemoteSession(payload) ??
+        (provider === 'weixin' ? fallbackWeixinRemoteSession(payload, sender) : null)
       if (provider === 'feishu' && channel) {
         if (remoteSession) {
           await this.rememberFeishuRemoteSession(settings, channel, remoteSession)
