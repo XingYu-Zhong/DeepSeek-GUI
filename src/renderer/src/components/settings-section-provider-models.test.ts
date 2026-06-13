@@ -81,6 +81,30 @@ describe('ProviderModelsManager', () => {
     expect(html).toContain('Default profile')
   })
 
+  it('keeps model names on a separate row from compact capability badges', () => {
+    const html = renderManager(provider({
+      models: ['deepseek-v4-pro'],
+      modelProfiles: {
+        'deepseek-v4-pro': {
+          contextWindowTokens: 1_000_000,
+          inputModalities: ['text', 'image'],
+          outputModalities: ['text'],
+          supportsToolCalling: true,
+          messageParts: ['text', 'image_url'],
+          reasoning: {
+            supportedEfforts: ['off', 'high'],
+            defaultEffort: 'high',
+            requestProtocol: 'deepseek-chat-completions'
+          }
+        }
+      }
+    }))
+
+    expect(html).toContain('grid min-w-0 flex-1 gap-1.5')
+    expect(html).toContain('flex min-w-0 flex-wrap items-center gap-1')
+    expect(html).toContain('text-[10.5px]')
+  })
+
   it('exposes the complete model name on hover for truncated rows', () => {
     const longModelId = 'MiniMax-Text-01-very-long-model-name-with-extra-tags-and-context'
     const html = renderManager(provider({ models: [longModelId] }))

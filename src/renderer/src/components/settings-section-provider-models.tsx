@@ -191,7 +191,7 @@ function ModelBadge({
         ? 'border-ds-border-muted bg-transparent text-ds-faint'
         : 'border-ds-border-muted bg-ds-main/60 text-ds-muted'
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 ${toneClass}`}>
+    <span className={`inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0 text-[10.5px] font-medium leading-4 ${toneClass}`}>
       {icon}
       {children}
     </span>
@@ -200,7 +200,7 @@ function ModelBadge({
 
 function ModelName({ modelId }: { modelId: string }): ReactElement {
   return (
-    <span className="group/model-name relative min-w-0 flex-1" title={modelId}>
+    <span className="group/model-name relative min-w-0" title={modelId}>
       <span className="block truncate font-mono text-[12.5px] text-ds-ink">{modelId}</span>
       <span
         aria-hidden="true"
@@ -310,41 +310,43 @@ export function ProviderModelsManager({
             return (
               <li
                 key={modelEntryKey(kind, modelId)}
-                className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 ${
+                className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${
                   active ? 'border-accent/60 bg-ds-main/45 ring-1 ring-accent/30' : 'border-ds-border bg-ds-card'
                 }`}
               >
-                <ModelName modelId={modelId} />
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <ModelBadge tone={kind === 'chat' ? 'faint' : 'muted'}>
-                    {t(modelKindLabelKey(kind))}
-                  </ModelBadge>
-                  {kind === 'chat' && profile ? (
-                    <>
-                      {profile.contextWindowTokens ? (
-                        <ModelBadge>{t('providerModelContextBadge', {
-                          size: describeContextWindowTokens(profile.contextWindowTokens)
-                        })}</ModelBadge>
-                      ) : null}
-                      {profile.inputModalities.includes('image') ? (
-                        <ModelBadge icon={<Eye className="h-3 w-3" strokeWidth={1.9} />}>
-                          {t('modelProviderVisionBadge')}
-                        </ModelBadge>
-                      ) : null}
-                      {profile.reasoning ? (
-                        <ModelBadge icon={<Brain className="h-3 w-3" strokeWidth={1.9} />}>
-                          {t('providerModelReasoningBadge')}
-                        </ModelBadge>
-                      ) : null}
-                      {!profile.supportsToolCalling ? (
-                        <ModelBadge tone="warning">{t('providerModelNoToolsBadge')}</ModelBadge>
-                      ) : null}
-                    </>
-                  ) : kind === 'chat' ? (
-                    <ModelBadge tone="faint">{t('providerModelDefaultProfileBadge')}</ModelBadge>
-                  ) : null}
+                <span className="grid min-w-0 flex-1 gap-1.5">
+                  <ModelName modelId={modelId} />
+                  <span className="flex min-w-0 flex-wrap items-center gap-1">
+                    <ModelBadge tone={kind === 'chat' ? 'faint' : 'muted'}>
+                      {t(modelKindLabelKey(kind))}
+                    </ModelBadge>
+                    {kind === 'chat' && profile ? (
+                      <>
+                        {profile.contextWindowTokens ? (
+                          <ModelBadge>{t('providerModelContextBadge', {
+                            size: describeContextWindowTokens(profile.contextWindowTokens)
+                          })}</ModelBadge>
+                        ) : null}
+                        {profile.inputModalities.includes('image') ? (
+                          <ModelBadge icon={<Eye className="h-2.5 w-2.5" strokeWidth={1.9} />}>
+                            {t('modelProviderVisionBadge')}
+                          </ModelBadge>
+                        ) : null}
+                        {profile.reasoning ? (
+                          <ModelBadge icon={<Brain className="h-2.5 w-2.5" strokeWidth={1.9} />}>
+                            {t('providerModelReasoningBadge')}
+                          </ModelBadge>
+                        ) : null}
+                        {!profile.supportsToolCalling ? (
+                          <ModelBadge tone="warning">{t('providerModelNoToolsBadge')}</ModelBadge>
+                        ) : null}
+                      </>
+                    ) : kind === 'chat' ? (
+                      <ModelBadge tone="faint">{t('providerModelDefaultProfileBadge')}</ModelBadge>
+                    ) : null}
+                  </span>
                 </span>
-                <span className="flex items-center gap-1">
+                <span className="flex shrink-0 items-center gap-1 pt-0.5">
                   <button
                     type="button"
                     aria-label={t('providerModelEditAction', { model: modelId })}
