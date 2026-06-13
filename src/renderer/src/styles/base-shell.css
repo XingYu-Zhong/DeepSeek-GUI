@@ -84,6 +84,7 @@
   --ds-inline-code-bg: rgba(240, 245, 251, 0.92);
   --ds-inline-code-hover-bg: rgba(228, 238, 250, 0.98);
   --ds-pre-bg: rgba(245, 248, 253, 0.96);
+  --ds-code-block-bg: #edf3fb;
   --ds-table-head-bg: rgba(242, 246, 252, 0.96);
   --ds-scrollbar-thumb: rgba(84, 103, 140, 0.24);
   --ds-scrollbar-thumb-hover: rgba(84, 103, 140, 0.34);
@@ -192,6 +193,7 @@
   --ds-inline-code-bg: rgba(151, 192, 235, 0.09);
   --ds-inline-code-hover-bg: rgba(111, 176, 232, 0.2);
   --ds-pre-bg: #151c2e;
+  --ds-code-block-bg: #101827;
   --ds-table-head-bg: rgba(27, 35, 56, 0.94);
   --ds-scrollbar-thumb: rgba(151, 178, 215, 0.28);
   --ds-scrollbar-thumb-hover: rgba(171, 198, 233, 0.38);
@@ -282,6 +284,7 @@
   --ds-inline-code-bg: rgba(249, 242, 226, 0.92);
   --ds-inline-code-hover-bg: rgba(247, 233, 203, 0.98);
   --ds-pre-bg: rgba(252, 247, 235, 0.96);
+  --ds-code-block-bg: #f6ecd7;
   --ds-table-head-bg: rgba(250, 244, 229, 0.96);
   --ds-scrollbar-thumb: rgba(117, 96, 63, 0.24);
   --ds-scrollbar-thumb-hover: rgba(117, 96, 63, 0.34);
@@ -372,6 +375,7 @@
   --ds-inline-code-bg: rgba(238, 198, 128, 0.09);
   --ds-inline-code-hover-bg: rgba(242, 177, 61, 0.2);
   --ds-pre-bg: #1e1812;
+  --ds-code-block-bg: #15110d;
   --ds-table-head-bg: rgba(39, 31, 23, 0.94);
   --ds-scrollbar-thumb: rgba(214, 188, 142, 0.28);
   --ds-scrollbar-thumb-hover: rgba(233, 208, 162, 0.38);
@@ -681,6 +685,7 @@ html {
   --ds-inline-code-bg: rgba(151, 192, 235, 0.075);
   --ds-inline-code-hover-bg: rgba(111, 176, 232, 0.18);
   --ds-pre-bg: #151c2e;
+  --ds-code-block-bg: #101827;
   --ds-table-head-bg: rgba(27, 35, 56, 0.94);
   --ds-scrollbar-thumb: rgba(170, 170, 170, 0.26);
   --ds-scrollbar-thumb-hover: rgba(200, 200, 200, 0.36);

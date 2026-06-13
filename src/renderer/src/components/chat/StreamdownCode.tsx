@@ -100,7 +100,7 @@ function PlainTextBlock({ code }: { code: string }): ReactNode {
   if (!trimmedCode.trim()) return null
 
   return (
-    <div className="ds-plain-text-block" data-streamdown="plain-text-block">
+    <div className="ds-plain-text-block ds-plain-code-block" data-streamdown="plain-text-block">
       {trimmedCode}
     </div>
   )

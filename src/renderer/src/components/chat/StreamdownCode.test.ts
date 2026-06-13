@@ -14,6 +14,7 @@ describe('StreamdownCode plain text fences', () => {
     )
 
     expect(html).toContain('ds-plain-text-block')
+    expect(html).toContain('ds-plain-code-block')
     expect(html).toContain('refactor(chat): simplify composer')
     expect(html).toContain('- Keep only Stop')
     expect(html).not.toContain('ds-code-block-header')
