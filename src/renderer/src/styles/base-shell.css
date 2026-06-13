@@ -2937,6 +2937,9 @@ pre {
 .ds-composer-footer-hint {
   flex: 0 1 auto;
   min-width: min(160px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @container (max-width: 640px) {
