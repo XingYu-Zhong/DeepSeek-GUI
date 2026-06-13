@@ -7,6 +7,9 @@ dist/
 *.log
 .DS_Store
 
+### Local agent worktrees
+.claude/worktrees/
+
 ### Local environment
 .env
 .env.*
