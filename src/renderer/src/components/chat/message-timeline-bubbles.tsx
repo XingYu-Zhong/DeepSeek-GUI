@@ -1405,6 +1405,11 @@ function MessageBubbleImpl({ block, nested = false }: { block: ChatBlock; nested
   if (block.kind === 'system') {
     const errorTone = block.severity === 'error'
     const warningTone = block.severity === 'warning'
+    const progressTotal = block.progress?.total && block.progress.total > 0 ? block.progress.total : 0
+    const progressCurrent = progressTotal > 0
+      ? Math.min(Math.max(0, block.progress?.current ?? 0), progressTotal)
+      : 0
+    const progressPercent = progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0
     return (
       <div
         className={`rounded-[18px] border px-3 py-2 text-[13.5px] leading-6 ${
@@ -1416,6 +1421,26 @@ function MessageBubbleImpl({ block, nested = false }: { block: ChatBlock; nested
         }`}
       >
         <p className="whitespace-pre-wrap break-words">{block.text}</p>
+        {block.progress ? (
+          <div
+            className="mt-2 h-1.5 overflow-hidden rounded-full bg-ds-border-muted/70"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progressTotal || 1}
+            aria-valuenow={progressCurrent}
+          >
+            <div
+              className={`h-full rounded-full transition-[width] duration-300 ${
+                block.progress.status === 'failed'
+                  ? 'bg-ds-danger'
+                  : block.progress.status === 'completed'
+                    ? 'bg-ds-success'
+                    : 'bg-ds-accent'
+              }`}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        ) : null}
         {block.code ? (
           <p className="mt-1 font-mono text-[11px] opacity-70">{block.code}</p>
         ) : null}

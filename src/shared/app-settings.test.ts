@@ -481,6 +481,53 @@ describe('mergeKunRuntimeSettings', () => {
     expect(invalidSize.imageGeneration.timeoutMs).toBe(180000)
   })
 
+  it('preserves image recognition enabledAt only while enabled', () => {
+    const current = defaultKunRuntimeSettings()
+    const next = mergeKunRuntimeSettings(current, {
+      imageRecognition: {
+        enabled: true,
+        enabledAt: '2026-06-13T08:00:00.000Z',
+        baseUrl: ' https://api.example.com/v1 ',
+        apiKey: 'sk-image',
+        model: 'vision-model'
+      }
+    })
+
+    expect(next.imageRecognition).toMatchObject({
+      enabled: true,
+      enabledAt: '2026-06-13T08:00:00.000Z',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk-image',
+      model: 'vision-model'
+    })
+
+    const edited = mergeKunRuntimeSettings(next, {
+      imageRecognition: { prompt: 'Read text.' }
+    })
+    expect(edited.imageRecognition.enabledAt).toBe('2026-06-13T08:00:00.000Z')
+
+    const disabled = mergeKunRuntimeSettings(edited, {
+      imageRecognition: { enabled: false }
+    })
+    expect(disabled.imageRecognition.enabled).toBe(false)
+    expect(disabled.imageRecognition.enabledAt).toBeUndefined()
+  })
+
+  it('backfills image recognition enabledAt for legacy enabled settings', () => {
+    const current = defaultKunRuntimeSettings()
+    const next = mergeKunRuntimeSettings(current, {
+      imageRecognition: {
+        enabled: true,
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-image',
+        model: 'vision-model'
+      }
+    })
+
+    expect(next.imageRecognition.enabled).toBe(true)
+    expect(next.imageRecognition.enabledAt).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/))
+  })
+
   it('deep-merges media generation settings and normalizes invalid values', () => {
     const current = defaultKunRuntimeSettings()
     const next = mergeKunRuntimeSettings(current, {

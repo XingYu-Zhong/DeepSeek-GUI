@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FileAttachmentStore } from '../src/attachments/attachment-store.js'
 import { CompatModelClient } from '../src/adapters/model/compat-model-client.js'
+import type { ImageRecognizer } from '../src/adapters/tool/image-recognition-tool-provider.js'
 import {
   KunCapabilitiesConfig,
   type AttachmentsCapabilityConfig,
@@ -280,6 +281,292 @@ describe('Attachment store and multimodal input', () => {
       textFallbackCount: 1,
       textFallbackBase64Bytes: png(1, 1).toString('base64').length,
       textFallbackMimeTypes: ['image/png']
+    })
+  })
+
+  it('recognizes multiple images concurrently for eligible text-only fallback turns', async () => {
+    const store = createStore()
+    const first = await store.create({
+      name: 'first.png',
+      data: png(1, 1),
+      localFilePath: '/tmp/picked/first.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const second = await store.create({
+      name: 'second.png',
+      data: png(2, 3),
+      localFilePath: '/tmp/picked/second.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const seenRequests: ModelRequest[] = []
+    const model: ModelClient = {
+      provider: 'fake',
+      model: 'fake',
+      async *stream(request) {
+        seenRequests.push(request)
+        yield { kind: 'completed', stopReason: 'stop' }
+      }
+    }
+    let inFlight = 0
+    let maxInFlight = 0
+    const recognizer: ImageRecognizer = {
+      async recognize(input) {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        inFlight -= 1
+        return {
+          text: `recognized ${input.name}`,
+          model: 'vision-fallback',
+          mimeType: input.mimeType ?? 'image/png'
+        }
+      }
+    }
+    const h = makeHarness(model, {
+      attachmentStore: store,
+      imageRecognizer: recognizer,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      modelCapabilities: () => ({ ...visionCapabilities(), inputModalities: ['text'], messageParts: ['text'] })
+    })
+    await bootstrapThread(h, {
+      workspace: '/tmp/ws',
+      threadCreatedAt: '2026-06-13T08:00:01.000Z',
+      request: { prompt: 'look', attachmentIds: [first.id, second.id], model: 'text-only' }
+    })
+
+    expect(await h.loop.runTurn(h.threadId, h.turnId)).toBe('completed')
+    expect(maxInFlight).toBe(2)
+    expect(seenRequests).toHaveLength(1)
+    expect(seenRequests[0]?.attachments).toBeUndefined()
+    const fallbacks = seenRequests[0]?.attachmentTextFallbacks ?? []
+    expect(fallbacks).toHaveLength(2)
+    const decoded = fallbacks.map((fallback) =>
+      Buffer.from(fallback.dataBase64, 'base64').toString('utf8')
+    )
+    expect(decoded[0]).toContain('already-completed image recognition result')
+    expect(decoded[0]).toContain('Do not call recognize_image')
+    expect(decoded[0]).toContain('Name: first.png')
+    expect(decoded[0]).toContain('FilePath: /tmp/picked/first.png')
+    expect(decoded[0]).toContain('MIME: image/png')
+    expect(decoded[0]).toContain('Dimensions: 1x1')
+    expect(decoded[0]).toContain('RecognizedText:\nrecognized first.png')
+    expect(decoded[0]).not.toContain('RecognitionModel:')
+    expect(decoded[0]).not.toContain('```base64')
+    expect(decoded[1]).toContain('Name: second.png')
+    expect(decoded[1]).toContain('Dimensions: 2x3')
+    expect(decoded[1]).toContain('RecognizedText:\nrecognized second.png')
+    const progressEvents = (await h.sessionStore.loadEventsSince(h.threadId, 0))
+      .filter((event) => event.kind === 'image_recognition_progress')
+    expect(progressEvents.map((event) => ({
+      status: event.status,
+      recognizedCount: event.recognizedCount,
+      totalCount: event.totalCount
+    }))).toEqual([
+      { status: 'running', recognizedCount: 0, totalCount: 2 },
+      { status: 'running', recognizedCount: 1, totalCount: 2 },
+      { status: 'completed', recognizedCount: 2, totalCount: 2 }
+    ])
+  })
+
+  it('recognizes the first image turn in an old empty thread when the turn is after image recognition was enabled', async () => {
+    const store = createStore()
+    const attachment = await store.create({
+      name: 'first-turn.png',
+      data: png(1, 1),
+      localFilePath: '/tmp/picked/first-turn.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const seenRequests: ModelRequest[] = []
+    const model: ModelClient = {
+      provider: 'fake',
+      model: 'fake',
+      async *stream(request) {
+        seenRequests.push(request)
+        yield { kind: 'completed', stopReason: 'stop' }
+      }
+    }
+    const recognizer: ImageRecognizer = {
+      async recognize(input) {
+        return {
+          text: `recognized ${input.name}`,
+          model: 'vision-fallback',
+          mimeType: input.mimeType ?? 'image/png'
+        }
+      }
+    }
+    const h = makeHarness(model, {
+      attachmentStore: store,
+      imageRecognizer: recognizer,
+      imageRecognitionEnabledAt: '2000-01-01T00:00:00.000Z',
+      modelCapabilities: () => ({ ...visionCapabilities(), inputModalities: ['text'], messageParts: ['text'] })
+    })
+    await bootstrapThread(h, {
+      workspace: '/tmp/ws',
+      threadCreatedAt: '1999-12-31T23:59:59.000Z',
+      request: { prompt: 'look', attachmentIds: [attachment.id], model: 'text-only' }
+    })
+
+    expect(await h.loop.runTurn(h.threadId, h.turnId)).toBe('completed')
+    const decoded = Buffer.from(
+      seenRequests.at(-1)?.attachmentTextFallbacks?.[0]?.dataBase64 ?? '',
+      'base64'
+    ).toString('utf8')
+    expect(decoded).toContain('Name: first-turn.png')
+    expect(decoded).toContain('RecognizedText:\nrecognized first-turn.png')
+    expect(decoded).not.toContain('```base64')
+  })
+
+  it('does not recognize images for historical text-only fallback threads created before image recognition was enabled', async () => {
+    const store = createStore()
+    const attachment = await store.create({
+      name: 'old.png',
+      data: png(1, 1),
+      localFilePath: '/tmp/picked/old.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const seenRequests: ModelRequest[] = []
+    const model: ModelClient = {
+      provider: 'fake',
+      model: 'fake',
+      async *stream(request) {
+        seenRequests.push(request)
+        yield { kind: 'completed', stopReason: 'stop' }
+      }
+    }
+    const recognizer: ImageRecognizer = {
+      async recognize() {
+        throw new Error('recognizer should not be called for old threads')
+      }
+    }
+    const h = makeHarness(model, {
+      attachmentStore: store,
+      imageRecognizer: recognizer,
+      imageRecognitionEnabledAt: '2000-01-01T00:00:00.000Z',
+      modelCapabilities: () => ({ ...visionCapabilities(), inputModalities: ['text'], messageParts: ['text'] })
+    })
+    await bootstrapThread(h, {
+      workspace: '/tmp/ws',
+      threadCreatedAt: '1999-12-31T23:59:59.000Z',
+      initialItems: [{
+        id: 'item_old_user',
+        threadId: 'thr_1',
+        turnId: 'turn_old',
+        role: 'user',
+        status: 'completed',
+        createdAt: '1999-12-31T23:59:59.500Z',
+        finishedAt: '1999-12-31T23:59:59.500Z',
+        kind: 'user_message',
+        text: 'old message'
+      }],
+      request: { prompt: 'look', attachmentIds: [attachment.id], model: 'text-only' }
+    })
+
+    expect(await h.loop.runTurn(h.threadId, h.turnId)).toBe('completed')
+    expect(seenRequests.at(-1)?.attachmentTextFallbacks?.[0]).toMatchObject({
+      id: attachment.id,
+      mimeType: 'image/png',
+      localFilePath: '/tmp/picked/old.png'
+    })
+  })
+
+  it('recognizes later image turns when the first user message is after image recognition was enabled', async () => {
+    const store = createStore()
+    const attachment = await store.create({
+      name: 'later.png',
+      data: png(1, 1),
+      localFilePath: '/tmp/picked/later.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const seenRequests: ModelRequest[] = []
+    const model: ModelClient = {
+      provider: 'fake',
+      model: 'fake',
+      async *stream(request) {
+        seenRequests.push(request)
+        yield { kind: 'completed', stopReason: 'stop' }
+      }
+    }
+    const recognizer: ImageRecognizer = {
+      async recognize(input) {
+        return {
+          text: `recognized ${input.name}`,
+          model: 'vision-fallback',
+          mimeType: input.mimeType ?? 'image/png'
+        }
+      }
+    }
+    const h = makeHarness(model, {
+      attachmentStore: store,
+      imageRecognizer: recognizer,
+      imageRecognitionEnabledAt: '2000-01-01T00:00:00.000Z',
+      modelCapabilities: () => ({ ...visionCapabilities(), inputModalities: ['text'], messageParts: ['text'] })
+    })
+    await bootstrapThread(h, {
+      workspace: '/tmp/ws',
+      threadCreatedAt: '1999-12-31T23:59:59.000Z',
+      initialItems: [{
+        id: 'item_first_user',
+        threadId: 'thr_1',
+        turnId: 'turn_first',
+        role: 'user',
+        status: 'completed',
+        createdAt: '2000-01-01T00:00:01.000Z',
+        finishedAt: '2000-01-01T00:00:01.000Z',
+        kind: 'user_message',
+        text: 'first message after image recognition'
+      }],
+      request: { prompt: 'look', attachmentIds: [attachment.id], model: 'text-only' }
+    })
+
+    expect(await h.loop.runTurn(h.threadId, h.turnId)).toBe('completed')
+    const decoded = Buffer.from(
+      seenRequests.at(-1)?.attachmentTextFallbacks?.[0]?.dataBase64 ?? '',
+      'base64'
+    ).toString('utf8')
+    expect(decoded).toContain('RecognizedText:\nrecognized later.png')
+  })
+
+  it('fails text-only fallback turns when image recognition fails before calling the chat model', async () => {
+    const store = createStore()
+    const attachment = await store.create({
+      name: 'broken.png',
+      data: png(1, 1),
+      localFilePath: '/tmp/picked/broken.png',
+      threadId: 'thr_1',
+      workspace: '/tmp/ws'
+    })
+    const model: ModelClient = {
+      provider: 'fake',
+      model: 'fake',
+      async *stream() {
+        throw new Error('chat model should not be called')
+      }
+    }
+    const recognizer: ImageRecognizer = {
+      async recognize() {
+        throw new Error('vision model unavailable')
+      }
+    }
+    const h = makeHarness(model, {
+      attachmentStore: store,
+      imageRecognizer: recognizer,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      modelCapabilities: () => ({ ...visionCapabilities(), inputModalities: ['text'], messageParts: ['text'] })
+    })
+    await bootstrapThread(h, {
+      workspace: '/tmp/ws',
+      threadCreatedAt: '2026-06-13T08:00:01.000Z',
+      request: { prompt: 'look', attachmentIds: [attachment.id], model: 'text-only' }
+    })
+
+    expect(await h.loop.runTurn(h.threadId, h.turnId)).toBe('failed')
+    await expect(h.turns.getTurn(h.threadId, h.turnId)).resolves.toMatchObject({
+      error: expect.stringMatching(/vision model unavailable/)
     })
   })
 

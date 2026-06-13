@@ -84,6 +84,7 @@ export type UserInputAnswer = {
 export type NormalizedThread = {
   id: string
   title: string
+  createdAt?: string
   updatedAt: string
   model: string
   mode: string
@@ -245,6 +246,11 @@ export type ChatBlock =
       code?: string
       detail?: string
       severity?: RuntimeErrorSeverity
+      progress?: {
+        current: number
+        total: number
+        status: 'running' | 'completed' | 'failed'
+      }
     }
   | {
       kind: 'approval'
@@ -288,6 +294,7 @@ export type ToolEventPayload = {
 export type RuntimeStatusEventPayload = {
   kind:
     | 'tool_result_upload_wait'
+    | 'image_recognition_progress'
     | 'tool_catalog_changed'
     | 'tool_storm_suppressed'
     | 'compaction_summary_fallback'
@@ -296,6 +303,9 @@ export type RuntimeStatusEventPayload = {
   createdAt?: string
   message?: string
   toolResultCount?: number
+  progressCurrent?: number
+  progressTotal?: number
+  progressStatus?: 'running' | 'completed' | 'failed'
   changeKind?: 'additive' | 'breaking'
   toolName?: string
   callId?: string

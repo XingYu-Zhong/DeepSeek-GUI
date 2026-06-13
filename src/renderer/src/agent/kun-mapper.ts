@@ -48,6 +48,7 @@ export function threadFromCore(thread: CoreThreadSummaryJson): NormalizedThread 
   return {
     id: thread.id,
     title: thread.title?.trim() || thread.id.slice(0, 8),
+    createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     model: thread.model,
     mode: thread.mode,
@@ -1029,6 +1030,25 @@ function runtimeStatusFromEvent(event: CoreRuntimeEventJson): RuntimeStatusEvent
       toolResultCount: typeof event.toolResultCount === 'number' ? event.toolResultCount : 0
     }
   }
+  if (event.kind === 'image_recognition_progress') {
+    const turnKey = event.turnId ?? event.threadId ?? event.seq ?? Date.now()
+    const total = typeof event.totalCount === 'number' && event.totalCount > 0 ? event.totalCount : 1
+    const current = typeof event.recognizedCount === 'number'
+      ? Math.min(Math.max(0, event.recognizedCount), total)
+      : 0
+    const status = event.status === 'completed' || event.status === 'failed'
+      ? event.status
+      : 'running'
+    return {
+      kind: 'image_recognition_progress',
+      itemId: `runtime_status_${turnKey}_image_recognition_progress`,
+      turnId: event.turnId,
+      createdAt: event.timestamp,
+      progressCurrent: current,
+      progressTotal: total,
+      progressStatus: status
+    }
+  }
 	  if (event.kind === 'tool_catalog_changed') {
 	    const key = event.fingerprint ?? event.seq ?? Date.now()
 	    return {
@@ -1116,6 +1136,11 @@ export async function dispatchKunRuntimeEvent(
       return
     }
     case 'tool_result_upload_wait': {
+      const status = runtimeStatusFromEvent(event)
+      if (status) sink.onRuntimeStatus?.(status)
+      return
+    }
+    case 'image_recognition_progress': {
       const status = runtimeStatusFromEvent(event)
       if (status) sink.onRuntimeStatus?.(status)
       return

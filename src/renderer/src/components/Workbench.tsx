@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import {
   modelSupportsImageInput,
+  getKunRuntimeSettings,
+  type AppSettingsV1,
   type ApprovalPolicy,
   type ModelProviderModelProfileV1,
   type SandboxMode
@@ -87,7 +89,7 @@ import { useWorkbenchPlanController } from './workbench-plan-controller'
 import { prepareImageAttachmentUpload } from '../lib/image-attachment-upload'
 import { isChatAttachmentUploadEnabled } from '../lib/attachment-upload-availability'
 import { normalizeWorkspaceRoot } from '../lib/workspace-path'
-import { useKeyboardShortcutSettings } from '../lib/keyboard-shortcut-settings'
+import { SETTINGS_CHANGED_EVENT, useKeyboardShortcutSettings } from '../lib/keyboard-shortcut-settings'
 import { collectComposerChangeSummary } from '../lib/composer-change-summary'
 import { formatWorkspacePickerError } from '../lib/format-workspace-picker-error'
 import { useUiModeCameosEnabled, useUiPluginStore } from '../store/ui-plugin-store'
@@ -413,6 +415,9 @@ export function Workbench(): ReactElement {
   const [composerReasoningEffort, setComposerReasoningEffort] =
     useState<ComposerReasoningEffort>('max')
   const [runtimeInfo, setRuntimeInfo] = useState<CoreRuntimeInfoJson | null>(null)
+  const [imageRecognitionSettings, setImageRecognitionSettings] =
+    useState<AppSettingsV1['agents']['kun']['imageRecognition'] | null>(null)
+  const [legacyImageRecognitionEnabledAt] = useState(() => new Date().toISOString())
   const [runtimeSkills, setRuntimeSkills] = useState<CoreRuntimeSkillJson[]>([])
   const [composerAttachments, setComposerAttachments] = useState<AttachmentReference[]>([])
   const [composerFileReferences, setComposerFileReferences] = useState<ComposerFileReference[]>([])
@@ -706,6 +711,24 @@ export function Workbench(): ReactElement {
   }, [initUiPlugins])
 
   useEffect(() => {
+    let cancelled = false
+    const applySettings = (settings: AppSettingsV1): void => {
+      if (!cancelled) setImageRecognitionSettings(getKunRuntimeSettings(settings).imageRecognition)
+    }
+    void rendererRuntimeClient.getSettings()
+      .then(applySettings)
+      .catch(() => undefined)
+    const onSettingsChanged = (event: Event): void => {
+      applySettings((event as CustomEvent<AppSettingsV1>).detail)
+    }
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onSettingsChanged)
+    return () => {
+      cancelled = true
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, onSettingsChanged)
+    }
+  }, [])
+
+  useEffect(() => {
     if (typeof document === 'undefined') return
     document.documentElement.setAttribute('data-focus-mode', focusModeEnabled ? 'on' : 'off')
   }, [focusModeEnabled])
@@ -911,13 +934,31 @@ export function Workbench(): ReactElement {
     }
     return false
   }, [composerModelGroups, runtimeInfo, selectedComposerModel, selectedComposerProviderId])
+  const activeThreadCreatedAt = threads.find((thread) => thread.id === activeThreadId)?.createdAt
+  const activeThreadFirstUserMessageCreatedAt = blocks.find((block) => block.kind === 'user')?.createdAt
+  const localImageRecognitionAvailable = Boolean(
+    imageRecognitionSettings?.enabled &&
+    imageRecognitionSettings.baseUrl.trim() &&
+    imageRecognitionSettings.apiKey.trim() &&
+    imageRecognitionSettings.model.trim()
+  )
+  const imageRecognitionAvailable =
+    runtimeInfo?.capabilities.imageRecognition?.available === true || localImageRecognitionAvailable
+  const imageRecognitionEnabledAt =
+    runtimeInfo?.capabilities.imageRecognition?.enabledAt ||
+    imageRecognitionSettings?.enabledAt ||
+    (localImageRecognitionAvailable ? legacyImageRecognitionEnabledAt : undefined)
 
   const attachmentUploadEnabled = isChatAttachmentUploadEnabled({
     runtimeConnection,
     route,
     mode,
     attachmentStoreAvailable: runtimeInfo?.capabilities.attachments.available,
-    modelSupportsImageInput: selectedModelSupportsImageInput
+    modelSupportsImageInput: selectedModelSupportsImageInput,
+    imageRecognitionAvailable,
+    imageRecognitionEnabledAt,
+    threadCreatedAt: activeThreadCreatedAt,
+    firstUserMessageCreatedAt: activeThreadFirstUserMessageCreatedAt
   })
   const webAccessAvailable =
     runtimeInfo?.capabilities.web.fetch.available === true ||

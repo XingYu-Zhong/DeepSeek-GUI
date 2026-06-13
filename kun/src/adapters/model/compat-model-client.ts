@@ -2356,6 +2356,9 @@ function attachTextFallbacksToLatestUserMessage(
 function formatAttachmentTextFallback(
   attachment: NonNullable<ModelRequest['attachmentTextFallbacks']>[number]
 ): string {
+  if (attachment.mimeType === 'text/plain') {
+    return Buffer.from(attachment.dataBase64, 'base64').toString('utf8')
+  }
   return [
     '[Attached image as base64 text]',
     `Name: ${attachment.name}`,

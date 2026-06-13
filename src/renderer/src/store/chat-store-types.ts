@@ -79,6 +79,7 @@ export type SettingsRouteSection =
   | 'general'
   | 'providers'
   | 'write'
+  | 'imageInput'
   | 'imageGeneration'
   | 'mediaGeneration'
   | 'speechToText'

@@ -239,6 +239,21 @@ export const SpeechGenCapabilityConfig = CapabilityToggleConfig.extend({
 }).strict()
 export type SpeechGenCapabilityConfig = z.infer<typeof SpeechGenCapabilityConfig>
 
+export const ImageRecognitionProtocol = z.enum(['openai-chat-completions'])
+export type ImageRecognitionProtocol = z.infer<typeof ImageRecognitionProtocol>
+
+export const ImageRecognitionCapabilityConfig = CapabilityToggleConfig.extend({
+  enabledAt: z.string().min(1).optional(),
+  protocol: ImageRecognitionProtocol.default('openai-chat-completions'),
+  baseUrl: z.string().min(1).optional(),
+  apiKey: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  prompt: z.string().min(1).default('Extract and summarize all visible text in this image. Include important labels, tables, UI text, and any context needed by a text-only model.'),
+  timeoutMs: z.number().int().positive().default(120_000),
+  maxDownloadBytes: z.number().int().positive().default(10 * 1024 * 1024)
+}).strict()
+export type ImageRecognitionCapabilityConfig = z.infer<typeof ImageRecognitionCapabilityConfig>
+
 export const MusicGenerationProtocol = z.enum(['minimax-music'])
 export type MusicGenerationProtocol = z.infer<typeof MusicGenerationProtocol>
 
@@ -277,6 +292,7 @@ export const KunCapabilitiesConfig = z
     memory: MemoryCapabilityConfig.default(() => MemoryCapabilityConfig.parse({})),
     imageGen: ImageGenCapabilityConfig.default(() => ImageGenCapabilityConfig.parse({})),
     speechGen: SpeechGenCapabilityConfig.default(() => SpeechGenCapabilityConfig.parse({})),
+    imageRecognition: ImageRecognitionCapabilityConfig.default(() => ImageRecognitionCapabilityConfig.parse({})),
     musicGen: MusicGenCapabilityConfig.default(() => MusicGenCapabilityConfig.parse({})),
     videoGen: VideoGenCapabilityConfig.default(() => VideoGenCapabilityConfig.parse({}))
   })
@@ -342,6 +358,10 @@ export const RuntimeCapabilityManifest = z
     speechGen: RuntimeCapabilityState.extend({
       model: z.string().optional()
     }).strict(),
+    imageRecognition: RuntimeCapabilityState.extend({
+      model: z.string().optional(),
+      enabledAt: z.string().optional()
+    }).strict(),
     musicGen: RuntimeCapabilityState.extend({
       model: z.string().optional()
     }).strict(),
@@ -394,6 +414,10 @@ export function buildRuntimeCapabilityManifest(input: {
     reason?: string
   }
   speechGen?: {
+    available?: boolean
+    reason?: string
+  }
+  imageRecognition?: {
     available?: boolean
     reason?: string
   }
@@ -511,6 +535,16 @@ export function buildRuntimeCapabilityManifest(input: {
         input.speechGen?.reason ?? 'speech generation provider is not configured'
       ),
       ...(config.speechGen.model ? { model: config.speechGen.model } : {})
+    },
+    imageRecognition: {
+      ...providerCapabilityState(
+        config.imageRecognition.enabled,
+        'image recognition is disabled by config',
+        input.imageRecognition?.available === true,
+        input.imageRecognition?.reason ?? 'image recognition provider is not configured'
+      ),
+      ...(config.imageRecognition.model ? { model: config.imageRecognition.model } : {}),
+      ...(config.imageRecognition.enabledAt ? { enabledAt: config.imageRecognition.enabledAt } : {})
     },
     musicGen: {
       ...providerCapabilityState(

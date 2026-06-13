@@ -50,6 +50,7 @@ import { modelCapabilitiesForModel, type ContextCompactionConfig } from './model
 import type { SkillRuntime } from '../skills/skill-runtime.js'
 import type { AttachmentContent, AttachmentStore } from '../attachments/attachment-store.js'
 import type { ModelInputAttachment, ModelTextAttachmentFallback } from '../ports/model-client.js'
+import type { ImageRecognizer } from '../adapters/tool/image-recognition-tool-provider.js'
 import type { MemoryStore } from '../memory/memory-store.js'
 import {
   hasHooksForPhase,
@@ -375,6 +376,8 @@ export type AgentLoopOptions = {
   modelCapabilities?: (model: string) => ModelCapabilityMetadata
   skillRuntime?: SkillRuntime
   attachmentStore?: AttachmentStore
+  imageRecognizer?: ImageRecognizer
+  imageRecognitionEnabledAt?: string
   memoryStore?: MemoryStore
   tokenEconomy?: TokenEconomyConfig
   contextCompaction?: ContextCompactionConfig
@@ -799,6 +802,7 @@ export class AgentLoop {
     const items = repairModelHistoryItems(
       effectiveHistoryAfterLatestCompaction(historyItems)
     )
+    const firstUserMessage = historyItems.find((item) => item.kind === 'user_message')
     const approvalPolicy = normalizeApprovalPolicy(thread?.approvalPolicy)
     const sandboxMode = normalizeSandboxMode(thread?.sandboxMode)
     // Per-turn mode overrides the thread mode so the GUI can toggle
@@ -822,8 +826,13 @@ export class AgentLoop {
     const attachments = await this.resolveAttachments({
       attachmentIds: turn?.attachmentIds ?? [],
       threadId,
+      turnId,
       workspace: thread?.workspace ?? '',
-      modelCapabilities
+      threadCreatedAt: thread?.createdAt,
+      turnCreatedAt: turn?.createdAt,
+      firstUserMessageCreatedAt: firstUserMessage?.createdAt,
+      modelCapabilities,
+      signal
     })
     const skillResolution = this.opts.skillRuntime?.resolveTurn({
       prompt: turn?.prompt ?? '',
@@ -2197,8 +2206,13 @@ export class AgentLoop {
   private async resolveAttachments(input: {
     attachmentIds: readonly string[]
     threadId: string
+    turnId: string
     workspace: string
+    threadCreatedAt?: string
+    turnCreatedAt?: string
+    firstUserMessageCreatedAt?: string
     modelCapabilities: ModelCapabilityMetadata
+    signal: AbortSignal
   }): Promise<{ imageAttachments: ModelInputAttachment[]; textFallbacks: ModelTextAttachmentFallback[] }> {
     if (input.attachmentIds.length === 0) return { imageAttachments: [], textFallbacks: [] }
     if (!this.opts.attachmentStore) {
@@ -2206,30 +2220,86 @@ export class AgentLoop {
     }
     const supportsImageInput = input.modelCapabilities.inputModalities.includes('image')
     const textFallbackPolicy = this.opts.attachmentStore.textFallbackPolicy()
-    const imageAttachments: ModelInputAttachment[] = []
-    const textFallbacks: ModelTextAttachmentFallback[] = []
-    for (const id of input.attachmentIds) {
-      const attachment = await this.opts.attachmentStore.resolveContent(id, {
+    const attachments = await Promise.all(input.attachmentIds.map((id) =>
+      this.opts.attachmentStore!.resolveContent(id, {
         threadId: input.threadId,
         workspace: input.workspace
       })
-      if (supportsImageInput) {
-        imageAttachments.push({
+    ))
+    if (supportsImageInput) {
+      return {
+        imageAttachments: attachments.map((attachment) => ({
           id: attachment.id,
           name: attachment.name,
           mimeType: attachment.mimeType,
           dataBase64: attachment.data.toString('base64'),
           ...(attachment.width ? { width: attachment.width } : {}),
           ...(attachment.height ? { height: attachment.height } : {})
-        })
-        continue
+        })),
+        textFallbacks: []
       }
-      textFallbacks.push(buildTextAttachmentFallback(
+    }
+    if (
+      this.opts.imageRecognizer &&
+      isImageRecognitionFallbackEligible({
+        enabledAt: this.opts.imageRecognitionEnabledAt,
+        threadCreatedAt: input.threadCreatedAt,
+        turnCreatedAt: input.turnCreatedAt,
+        firstUserMessageCreatedAt: input.firstUserMessageCreatedAt
+      })
+    ) {
+      await this.recordImageRecognitionProgress(input.threadId, input.turnId, 0, attachments.length, 'running')
+      let recognizedCount = 0
+      let failed = false
+      const recognized = await Promise.all(attachments.map(async (attachment) => {
+        try {
+          const result = await this.opts.imageRecognizer!.recognize({
+            data: attachment.data,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            threadId: input.threadId,
+            turnId: input.turnId,
+            workspace: input.workspace,
+            signal: input.signal,
+            ...(attachment.localFilePath ? { source: attachment.localFilePath } : {})
+          })
+          recognizedCount += 1
+          await this.recordImageRecognitionProgress(
+            input.threadId,
+            input.turnId,
+            recognizedCount,
+            attachments.length,
+            recognizedCount === attachments.length ? 'completed' : 'running'
+          )
+          return result
+        } catch (error) {
+          if (!failed) {
+            failed = true
+            await this.recordImageRecognitionProgress(
+              input.threadId,
+              input.turnId,
+              recognizedCount,
+              attachments.length,
+              'failed'
+            )
+          }
+          throw error
+        }
+      }))
+      return {
+        imageAttachments: [],
+        textFallbacks: recognized.map((result, index) =>
+          buildRecognizedImageTextFallback(attachments[index]!, result.text)
+        )
+      }
+    }
+    return {
+      imageAttachments: [],
+      textFallbacks: attachments.map((attachment) => buildTextAttachmentFallback(
         attachment,
         textFallbackPolicy.textFallbackMaxBase64Bytes
       ))
     }
-    return { imageAttachments, textFallbacks }
   }
 
   private async retrieveMemories(input: {
@@ -2244,6 +2314,23 @@ export class AgentLoop {
     })
     this.opts.memoryStore.setLastInjected(memories.map((memory) => memory.id))
     return memories
+  }
+
+  private async recordImageRecognitionProgress(
+    threadId: string,
+    turnId: string,
+    recognizedCount: number,
+    totalCount: number,
+    status: 'running' | 'completed' | 'failed'
+  ): Promise<void> {
+    await this.opts.events.record({
+      kind: 'image_recognition_progress',
+      threadId,
+      turnId,
+      status,
+      recognizedCount,
+      totalCount
+    })
   }
 
   /** Convenience factory for tests: builds a loop with sensible defaults. */
@@ -2295,6 +2382,58 @@ function buildTextAttachmentFallback(
     ...(attachment.localFilePath ? { localFilePath: attachment.localFilePath } : {}),
     wasCompressed: false
   }
+}
+
+function buildRecognizedImageTextFallback(
+  attachment: AttachmentContent,
+  text: string
+): ModelTextAttachmentFallback {
+  return {
+    id: attachment.id,
+    name: attachment.name,
+    mimeType: 'text/plain',
+    dataBase64: Buffer.from([
+      '[Attached image recognized by multimodal fallback]',
+      'This block is the already-completed image recognition result for an attached image. Use RecognizedText below as the image content. Do not call recognize_image or any other image recognition tool for this same image unless the user explicitly asks to re-run recognition.',
+      `Name: ${attachment.name}`,
+      `FilePath: ${attachment.localFilePath ?? 'unknown'}`,
+      `MIME: ${attachment.mimeType}`,
+      `Dimensions: ${formatAttachmentDimensions(attachment)}`,
+      'RecognizedText:',
+      text,
+      '[/Attached image]'
+    ].join('\n'), 'utf8').toString('base64'),
+    byteSize: Buffer.byteLength(text, 'utf8'),
+    ...(attachment.width ? { width: attachment.width } : {}),
+    ...(attachment.height ? { height: attachment.height } : {}),
+    ...(attachment.localFilePath ? { localFilePath: attachment.localFilePath } : {}),
+    wasCompressed: false
+  }
+}
+
+function isImageRecognitionFallbackEligible(input: {
+  enabledAt?: string
+  threadCreatedAt?: string
+  turnCreatedAt?: string
+  firstUserMessageCreatedAt?: string
+}): boolean {
+  const enabledAt = parseIsoTime(input.enabledAt)
+  if (enabledAt === null) return false
+  const threadCreatedAt = parseIsoTime(input.threadCreatedAt)
+  const turnCreatedAt = parseIsoTime(input.turnCreatedAt)
+  const firstUserMessageCreatedAt = parseIsoTime(input.firstUserMessageCreatedAt)
+  const candidate = firstUserMessageCreatedAt ?? turnCreatedAt ?? threadCreatedAt
+  return candidate !== null && candidate >= enabledAt
+}
+
+function parseIsoTime(value: string | undefined): number | null {
+  if (!value?.trim()) return null
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? time : null
+}
+
+function formatAttachmentDimensions(attachment: AttachmentContent): string {
+  return attachment.width && attachment.height ? `${attachment.width}x${attachment.height}` : 'unknown'
 }
 
 function attachmentRequestPipelineDetails(input: {

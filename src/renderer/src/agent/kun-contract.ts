@@ -218,6 +218,10 @@ export type CoreRuntimeCapabilityManifestJson = {
   speechGen?: CoreRuntimeCapabilityStateJson & {
     model?: string
   }
+  imageRecognition?: CoreRuntimeCapabilityStateJson & {
+    model?: string
+    enabledAt?: string
+  }
   musicGen?: CoreRuntimeCapabilityStateJson & {
     model?: string
   }
@@ -501,6 +505,8 @@ export type CoreRuntimeEventJson = {
   callId?: string
   readyCount?: number
   toolResultCount?: number
+  recognizedCount?: number
+  totalCount?: number
 	  fingerprint?: string
 	  toolCount?: number
 	  changeKind?: 'additive' | 'breaking'

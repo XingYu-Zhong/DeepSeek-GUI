@@ -145,6 +145,7 @@ export function applyRuntimeEvent(
       break
 	    case 'tool_call_ready':
 	    case 'tool_result_upload_wait':
+    case 'image_recognition_progress':
 	    case 'tool_storm_suppressed':
     case 'pipeline_stage':
     case 'heartbeat':

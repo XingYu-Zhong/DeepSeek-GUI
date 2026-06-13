@@ -44,6 +44,9 @@ export const CUSTOM_TEXT_TO_SPEECH_PROVIDER_ID = 'custom'
 export const TEXT_TO_SPEECH_PROTOCOLS = ['openai-speech', 'minimax-t2a', 'mimo-tts'] as const
 export type TextToSpeechProtocol = (typeof TEXT_TO_SPEECH_PROTOCOLS)[number]
 export const DEFAULT_TEXT_TO_SPEECH_PROTOCOL: TextToSpeechProtocol = 'openai-speech'
+export const IMAGE_RECOGNITION_PROTOCOLS = ['openai-chat-completions'] as const
+export type ImageRecognitionProtocol = (typeof IMAGE_RECOGNITION_PROTOCOLS)[number]
+export const DEFAULT_IMAGE_RECOGNITION_PROTOCOL: ImageRecognitionProtocol = 'openai-chat-completions'
 export const CUSTOM_MUSIC_GENERATION_PROVIDER_ID = 'custom'
 export const MUSIC_GENERATION_PROTOCOLS = ['minimax-music'] as const
 export type MusicGenerationProtocol = (typeof MUSIC_GENERATION_PROTOCOLS)[number]
@@ -208,11 +211,13 @@ export type KunRuntimeSettingsV1 = {
   speechToText: KunSpeechToTextSettingsV1
   /** Text-to-speech provider exposed to agents as generate_speech. */
   textToSpeech: KunTextToSpeechSettingsV1
+  /** 给纯文本模型和图片识别工具使用的多模态 fallback 配置。 */
+  imageRecognition: KunImageRecognitionSettingsV1
   /** Music generation provider exposed to agents as generate_music. */
   musicGeneration: KunMusicGenerationSettingsV1
   /** Video generation provider exposed to agents as generate_video. */
   videoGeneration: KunVideoGenerationSettingsV1
-  /** GUI-owned model capability profiles written into Kun `models.profiles`. */
+  /** GUI 写入 Kun `models.profiles` 的模型能力配置。 */
   modelProfiles: Record<string, ModelProviderModelProfileV1>
 }
 
@@ -263,6 +268,17 @@ export type KunTextToSpeechSettingsV1 = {
   voice: string
   /** Default output audio format such as mp3 or wav. */
   format: string
+  timeoutMs: number
+}
+
+export type KunImageRecognitionSettingsV1 = {
+  enabled: boolean
+  enabledAt?: string
+  protocol: ImageRecognitionProtocol
+  baseUrl: string
+  apiKey: string
+  model: string
+  prompt: string
   timeoutMs: number
 }
 
@@ -382,7 +398,7 @@ export type KunTokenEconomySettingsPatchV1 = Partial<
 export type KunRuntimeSettingsPatchV1 = Partial<
   Omit<
     KunRuntimeSettingsV1,
-    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'modelProfiles'
+    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'imageRecognition' | 'musicGeneration' | 'videoGeneration' | 'modelProfiles'
   >
 > & {
   mcpSearch?: Partial<KunMcpSearchSettingsV1>
@@ -393,6 +409,7 @@ export type KunRuntimeSettingsPatchV1 = Partial<
   imageGeneration?: Partial<KunImageGenerationSettingsV1>
   speechToText?: Partial<KunSpeechToTextSettingsV1>
   textToSpeech?: Partial<KunTextToSpeechSettingsV1>
+  imageRecognition?: Partial<KunImageRecognitionSettingsV1>
   musicGeneration?: Partial<KunMusicGenerationSettingsV1>
   videoGeneration?: Partial<KunVideoGenerationSettingsV1>
   modelProfiles?: Record<string, ModelProviderModelProfilePatchV1 | null>

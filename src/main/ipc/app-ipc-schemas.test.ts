@@ -181,7 +181,7 @@ describe('app-ipc-schemas', () => {
     expect(payload.write?.inlineCompletion?.model).toBe('deepseek-v4-pro')
     expect(payload.write?.selectionAssist?.infographicPrompt).toBe('手绘风格信息图。')
     expect(payload.write?.selectionAssist?.quickActions).toHaveLength(2)
-    expect(payload.disabledSkillIds).toEqual(['test-skill-08'])
+    expect('disabledSkillIds' in payload).toBe(false)
   })
 
   it('accepts media generation settings and provider capability patches', () => {
@@ -248,6 +248,29 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.textToSpeech?.enabled).toBe(true)
     expect(payload.agents?.kun?.musicGeneration?.model).toBe('music-2.6')
     expect(payload.agents?.kun?.videoGeneration?.defaultResolution).toBe('1080P')
+  })
+
+  it('accepts image recognition settings patches', () => {
+    const payload = settingsPatchSchema.parse({
+      agents: {
+        kun: {
+          imageRecognition: {
+            enabled: true,
+            enabledAt: '2026-06-13T08:00:00.000Z',
+            protocol: 'openai-chat-completions',
+            baseUrl: 'https://api.openai.com/v1',
+            apiKey: 'sk-vision',
+            model: 'gpt-4.1-mini',
+            prompt: 'Summarize the image text.',
+            timeoutMs: 120000
+          }
+        }
+      }
+    })
+
+    expect(payload.agents?.kun?.imageRecognition?.enabled).toBe(true)
+    expect(payload.agents?.kun?.imageRecognition?.enabledAt).toBe('2026-06-13T08:00:00.000Z')
+    expect(payload.agents?.kun?.imageRecognition?.protocol).toBe('openai-chat-completions')
   })
 
   it('accepts schedule settings patches and task payloads', () => {
