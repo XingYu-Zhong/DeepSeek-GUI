@@ -700,6 +700,41 @@ describe('streaming runtime status events', () => {
     })
   })
 
+  it('surfaces image recognition progress as runtime status events', async () => {
+    let captured: unknown = null
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onRuntimeStatus: (event) => {
+        captured = event
+      }
+    }
+
+    await dispatchKunRuntimeEvent(
+      {
+        kind: 'image_recognition_progress',
+        seq: 22,
+        timestamp: '2026-06-03T10:00:01.000Z',
+        threadId: 'thr_1',
+        turnId: 'turn_1',
+        status: 'running',
+        recognizedCount: 1,
+        totalCount: 2
+      },
+      sink,
+      async () => undefined
+    )
+
+    expect(captured).toMatchObject({
+      kind: 'image_recognition_progress',
+      itemId: 'runtime_status_turn_1_image_recognition_progress',
+      turnId: 'turn_1',
+      createdAt: '2026-06-03T10:00:01.000Z',
+      progressCurrent: 1,
+      progressTotal: 2,
+      progressStatus: 'running'
+    })
+  })
+
 	  it('surfaces tool catalog drift as a runtime status event', async () => {
 	    let captured: unknown = null
     const sink: ThreadEventSink = {

@@ -426,6 +426,24 @@ function runtimeStatusText(event: RuntimeStatusEventPayload): string {
   if (event.kind === 'tool_result_upload_wait') {
     return i18n.t('common:toolUploadWaitStatus', { count: event.toolResultCount ?? 0 })
   }
+  if (event.kind === 'image_recognition_progress') {
+    if (event.progressStatus === 'failed') {
+      return i18n.t('common:imageRecognitionProgressFailed', {
+        current: event.progressCurrent ?? 0,
+        total: event.progressTotal ?? 0
+      })
+    }
+    if (event.progressStatus === 'completed') {
+      return i18n.t('common:imageRecognitionProgressCompleted', {
+        current: event.progressCurrent ?? 0,
+        total: event.progressTotal ?? 0
+      })
+    }
+    return i18n.t('common:imageRecognitionProgressRunning', {
+      current: event.progressCurrent ?? 0,
+      total: event.progressTotal ?? 0
+    })
+  }
 	  if (event.kind === 'tool_catalog_changed') {
 	    return event.message?.trim() || i18n.t('common:toolCatalogChangedStatus')
 	  }
@@ -941,7 +959,16 @@ export function buildThreadEventSink(
           kind: 'system',
           id: ev.itemId,
           createdAt: ev.createdAt ?? new Date().toISOString(),
-          text
+          text,
+          ...(ev.kind === 'image_recognition_progress'
+            ? {
+                progress: {
+                  current: ev.progressCurrent ?? 0,
+                  total: ev.progressTotal ?? 1,
+                  status: ev.progressStatus ?? 'running'
+                }
+              }
+            : {})
         }
         const idx = baseBlocks.findIndex((candidate) => candidate.kind === 'system' && candidate.id === ev.itemId)
         const blocks = [...baseBlocks]

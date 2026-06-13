@@ -134,5 +134,6 @@ describe('MediaGenerationSettingsSection', () => {
     expect(html).toContain('music-2.6')
     expect(html).toContain('Video generation')
     expect(html).toContain('MiniMax-Hailuo-2.3')
+    expect(html).not.toContain('Image recognition fallback')
   })
 })

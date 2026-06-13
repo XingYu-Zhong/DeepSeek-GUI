@@ -24,6 +24,7 @@ export const RuntimeEventKind = z.enum([
   'assistant_reasoning_delta',
   'tool_call_ready',
   'tool_result_upload_wait',
+  'image_recognition_progress',
   'tool_storm_suppressed',
   'tool_catalog_changed',
   'tool_call_started',
@@ -161,6 +162,14 @@ export const ToolUploadStatusEvent = RuntimeEventBase.extend({
 })
 export type ToolUploadStatusEvent = z.infer<typeof ToolUploadStatusEvent>
 
+export const ImageRecognitionProgressEvent = RuntimeEventBase.extend({
+  kind: z.literal('image_recognition_progress'),
+  status: z.enum(['running', 'completed', 'failed']),
+  recognizedCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().positive()
+})
+export type ImageRecognitionProgressEvent = z.infer<typeof ImageRecognitionProgressEvent>
+
 export const ToolStormSuppressedEvent = RuntimeEventBase.extend({
   kind: z.literal('tool_storm_suppressed'),
   toolName: z.string().min(1),
@@ -241,6 +250,7 @@ export const RuntimeEvent = z.discriminatedUnion('kind', [
   UserInputEvent,
   ToolCallReadyEvent,
   ToolUploadStatusEvent,
+  ImageRecognitionProgressEvent,
   ToolStormSuppressedEvent,
   ToolCatalogEvent,
   CompactionEvent,

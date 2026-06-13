@@ -52,6 +52,7 @@ import {
   EasterEggSettingsSection,
   GeneralSettingsSection,
   ImageGenerationSettingsSection,
+  ImageInputSettingsSection,
   KeyboardShortcutsSettingsSection,
   LlmDebugSettingsSection,
   MediaGenerationSettingsSection,
@@ -61,7 +62,7 @@ import {
   WriteSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'agents' | 'permissions' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'providers' | 'write' | 'imageInput' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'agents' | 'permissions' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type SkillRootOption = {
@@ -242,6 +243,10 @@ export function SettingsView(): ReactElement {
       setCategory('imageGeneration')
       return
     }
+    if (settingsSection === 'imageInput') {
+      setCategory('imageInput')
+      return
+    }
     if (settingsSection === 'mediaGeneration') {
       setCategory('mediaGeneration')
       return
@@ -280,6 +285,7 @@ export function SettingsView(): ReactElement {
       settingsSection === 'providers' ||
       settingsSection === 'write' ||
       settingsSection === 'imageGeneration' ||
+      settingsSection === 'imageInput' ||
       settingsSection === 'mediaGeneration' ||
       settingsSection === 'speechToText' ||
       settingsSection === 'claw' ||
@@ -291,7 +297,7 @@ export function SettingsView(): ReactElement {
       return
     }
     const refs: Record<
-      Exclude<SettingsRouteSection, 'general' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates'>,
+      Exclude<SettingsRouteSection, 'general' | 'providers' | 'write' | 'imageGeneration' | 'imageInput' | 'mediaGeneration' | 'speechToText' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates'>,
       HTMLDivElement | null
     > = {
       agents: agentsSectionRef.current,
@@ -909,6 +915,7 @@ export function SettingsView(): ReactElement {
           {category === 'general' ? <GeneralSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
+          {category === 'imageInput' ? <ImageInputSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'imageGeneration' ? <ImageGenerationSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'speechToText' ? <SpeechToTextSettingsSection ctx={settingsSectionContext} /> : null}

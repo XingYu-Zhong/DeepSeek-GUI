@@ -2,6 +2,7 @@ import {
   DEFAULT_APPROVAL_POLICY,
   DEFAULT_DEEPSEEK_BASE_URL,
   DEFAULT_IMAGE_GENERATION_PROTOCOL,
+  DEFAULT_IMAGE_RECOGNITION_PROTOCOL,
   DEFAULT_KUN_DATA_DIR,
   DEFAULT_KUN_MODEL,
   DEFAULT_KUN_PORT,
@@ -17,6 +18,7 @@ import {
   type KunContextCompactionSettingsV1,
   type KunHistoryHygieneSettingsV1,
   type KunImageGenerationSettingsV1,
+  type KunImageRecognitionSettingsV1,
   type KunMcpSearchSettingsV1,
   type KunMusicGenerationSettingsV1,
   type KunRuntimeTuningSettingsV1,
@@ -30,6 +32,7 @@ import {
   type KunTokenEconomySettingsV1,
   type KunVideoGenerationSettingsV1,
   type ImageGenerationProtocol,
+  type ImageRecognitionProtocol,
   type MusicGenerationProtocol,
   type ModelProviderInputModality,
   type ModelProviderMessagePartSupport,
@@ -134,6 +137,7 @@ export function defaultKunRuntimeSettings(
     imageGeneration: defaultKunImageGenerationSettings(),
     speechToText: defaultKunSpeechToTextSettings(),
     textToSpeech: defaultKunTextToSpeechSettings(),
+    imageRecognition: defaultKunImageRecognitionSettings(),
     musicGeneration: defaultKunMusicGenerationSettings(),
     videoGeneration: defaultKunVideoGenerationSettings(),
     modelProfiles: {}
@@ -176,6 +180,19 @@ export function defaultKunTextToSpeechSettings(): KunTextToSpeechSettingsV1 {
     model: '',
     voice: '',
     format: 'mp3',
+    timeoutMs: 120_000
+  }
+}
+
+export function defaultKunImageRecognitionSettings(): KunImageRecognitionSettingsV1 {
+  return {
+    enabled: false,
+    enabledAt: undefined,
+    protocol: DEFAULT_IMAGE_RECOGNITION_PROTOCOL,
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    prompt: 'Extract and summarize all visible text in this image. Include important labels, tables, UI text, and any context needed by a text-only model.',
     timeoutMs: 120_000
   }
 }
@@ -345,6 +362,11 @@ export function mergeKunRuntimeSettings(
     ...currentTextToSpeech,
     ...(patch?.textToSpeech ?? {})
   })
+  const currentImageRecognition = normalizeKunImageRecognitionSettings(current.imageRecognition)
+  const nextImageRecognition = normalizeKunImageRecognitionSettings({
+    ...currentImageRecognition,
+    ...(patch?.imageRecognition ?? {})
+  })
   const currentMusicGeneration = normalizeKunMusicGenerationSettings(current.musicGeneration)
   const nextMusicGeneration = normalizeKunMusicGenerationSettings({
     ...currentMusicGeneration,
@@ -384,6 +406,7 @@ export function mergeKunRuntimeSettings(
     imageGeneration: nextImageGeneration,
     speechToText: nextSpeechToText,
     textToSpeech: nextTextToSpeech,
+    imageRecognition: nextImageRecognition,
     musicGeneration: nextMusicGeneration,
     videoGeneration: nextVideoGeneration,
     modelProfiles: nextModelProfiles
@@ -452,6 +475,38 @@ function normalizeKunTextToSpeechProtocol(value: unknown): TextToSpeechProtocol 
   return value === 'minimax-t2a' || value === 'mimo-tts'
     ? value
     : DEFAULT_TEXT_TO_SPEECH_PROTOCOL
+}
+
+function normalizeKunImageRecognitionSettings(
+  input: Partial<KunImageRecognitionSettingsV1> | undefined
+): KunImageRecognitionSettingsV1 {
+  const defaults = defaultKunImageRecognitionSettings()
+  const enabled = input?.enabled === true
+  const enabledAt = typeof input?.enabledAt === 'string' && isIsoDateString(input.enabledAt.trim())
+    ? input.enabledAt.trim()
+    : undefined
+  return {
+    enabled,
+    ...(enabled ? { enabledAt: enabledAt ?? new Date().toISOString() } : {}),
+    protocol: DEFAULT_IMAGE_RECOGNITION_PROTOCOL,
+    baseUrl: typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : defaults.baseUrl,
+    apiKey: typeof input?.apiKey === 'string' ? input.apiKey.trim() : defaults.apiKey,
+    model: typeof input?.model === 'string' ? input.model.trim() : defaults.model,
+    prompt: typeof input?.prompt === 'string' && input.prompt.trim()
+      ? input.prompt.trim().slice(0, 2000)
+      : defaults.prompt,
+    timeoutMs: boundedPositiveInt(input?.timeoutMs, defaults.timeoutMs, 600_000)
+  }
+}
+
+function isIsoDateString(value: string): boolean {
+  if (!value) return false
+  const time = Date.parse(value)
+  return Number.isFinite(time)
+}
+
+function normalizeKunImageRecognitionProtocol(value: unknown): ImageRecognitionProtocol {
+  return value === 'openai-chat-completions' ? value : DEFAULT_IMAGE_RECOGNITION_PROTOCOL
 }
 
 function normalizeKunMusicGenerationSettings(
@@ -911,6 +966,7 @@ export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partia
     imageGeneration: normalizeKunImageGenerationSettings(explicitKun.imageGeneration),
     speechToText: normalizeKunSpeechToTextSettings(explicitKun.speechToText),
     textToSpeech: normalizeKunTextToSpeechSettings(explicitKun.textToSpeech),
+    imageRecognition: normalizeKunImageRecognitionSettings(explicitKun.imageRecognition),
     musicGeneration: normalizeKunMusicGenerationSettings(explicitKun.musicGeneration),
     videoGeneration: normalizeKunVideoGenerationSettings(explicitKun.videoGeneration)
   }

@@ -52,4 +52,81 @@ describe('isChatAttachmentUploadEnabled', () => {
       modelSupportsImageInput: false
     })).toBe(false)
   })
+
+  it('enables text-only composer attachments for new image recognition fallback sessions only', () => {
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      now: () => new Date('2026-06-13T08:00:01.000Z')
+    })).toBe(true)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T08:00:01.000Z'
+    })).toBe(true)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T07:59:59.000Z',
+      now: () => new Date('2026-06-13T07:59:59.500Z')
+    })).toBe(false)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T07:59:59.000Z',
+      now: () => new Date('2026-06-13T08:00:01.000Z')
+    })).toBe(true)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T07:59:59.000Z',
+      firstUserMessageCreatedAt: '2026-06-13T08:00:01.000Z'
+    })).toBe(true)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: true,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T07:59:59.000Z',
+      firstUserMessageCreatedAt: '2026-06-13T07:59:59.500Z'
+    })).toBe(false)
+    expect(isChatAttachmentUploadEnabled({
+      runtimeConnection: 'ready',
+      route: 'chat',
+      mode: 'agent',
+      attachmentStoreAvailable: true,
+      modelSupportsImageInput: false,
+      imageRecognitionAvailable: false,
+      imageRecognitionEnabledAt: '2026-06-13T08:00:00.000Z',
+      threadCreatedAt: '2026-06-13T08:00:01.000Z'
+    })).toBe(false)
+  })
 })

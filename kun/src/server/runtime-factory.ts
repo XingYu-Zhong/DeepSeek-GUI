@@ -20,6 +20,7 @@ import { buildSkillToolProviders } from '../adapters/tool/skill-tool-provider.js
 import { buildDelegationToolProviders } from '../adapters/tool/delegation-tool-provider.js'
 import { buildWebToolProviders } from '../adapters/tool/web-tool-provider.js'
 import { buildImageGenToolProviders } from '../adapters/tool/image-gen-tool-provider.js'
+import { buildImageRecognitionToolProviders } from '../adapters/tool/image-recognition-tool-provider.js'
 import {
   buildMusicGenToolProviders,
   buildSpeechGenToolProviders,
@@ -208,6 +209,7 @@ export async function createKunServeRuntime(
     attachmentStore,
     nowIso
   })
+  const imageRecognitionProviders = buildImageRecognitionToolProviders(options.capabilities?.imageRecognition)
   const speechGenProviders = buildSpeechGenToolProviders(options.capabilities?.speechGen, { nowIso })
   const musicGenProviders = buildMusicGenToolProviders(options.capabilities?.musicGen, { nowIso })
   const videoGenProviders = buildVideoGenToolProviders(options.capabilities?.videoGen, { nowIso })
@@ -224,6 +226,7 @@ export async function createKunServeRuntime(
     ...buildMemoryToolProviders(memoryStore),
     ...buildSkillToolProviders(skillRuntime),
     ...imageGenProviders.providers,
+    ...imageRecognitionProviders.providers,
     ...speechGenProviders.providers,
     ...musicGenProviders.providers,
     ...videoGenProviders.providers
@@ -304,6 +307,13 @@ export async function createKunServeRuntime(
       available: speechGenProviders.available,
       reason: speechGenProviders.diagnostics.find((diagnostic) => diagnostic.reason)?.reason
     },
+    imageRecognition: {
+      available: imageRecognitionProviders.available,
+      reason: imageRecognitionProviders.diagnostics.find((diagnostic) => diagnostic.reason)?.reason,
+      ...(options.capabilities?.imageRecognition?.enabledAt
+        ? { enabledAt: options.capabilities.imageRecognition.enabledAt }
+        : {})
+    },
     musicGen: {
       available: musicGenProviders.available,
       reason: musicGenProviders.diagnostics.find((diagnostic) => diagnostic.reason)?.reason
@@ -360,6 +370,10 @@ export async function createKunServeRuntime(
     ...(options.runtime?.toolArgumentRepair ? { toolArgumentRepair: options.runtime.toolArgumentRepair } : {}),
     ...(resolvedHooks.length ? { hooks: resolvedHooks } : {}),
     ...(attachmentStore ? { attachmentStore } : {}),
+    ...(imageRecognitionProviders.recognizer ? { imageRecognizer: imageRecognitionProviders.recognizer } : {}),
+    ...(options.capabilities?.imageRecognition?.enabledAt
+      ? { imageRecognitionEnabledAt: options.capabilities.imageRecognition.enabledAt }
+      : {}),
     ...(memoryStore ? { memoryStore } : {}),
     onPlanWritten: async ({ threadId, planId, relativePath, markdown }) => {
       await threadService.syncTodosFromPlan(threadId, {

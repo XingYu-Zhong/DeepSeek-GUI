@@ -17,6 +17,7 @@ import {
   type AppSettingsV1,
   type ImageGenerationProtocol,
   type KunImageGenerationSettingsV1,
+  type KunImageRecognitionSettingsV1,
   type KunMusicGenerationSettingsV1,
   type KunRuntimeSettingsV1,
   type KunRuntimeSettingsPatchV1,
@@ -698,6 +699,10 @@ export function resolveKunTextToSpeechSettings(settings: AppSettingsV1): KunText
   }
 }
 
+export function resolveKunImageRecognitionSettings(settings: AppSettingsV1): KunImageRecognitionSettingsV1 {
+  return getKunRuntimeSettings(settings).imageRecognition
+}
+
 export function resolveKunMusicGenerationSettings(settings: AppSettingsV1): KunMusicGenerationSettingsV1 {
   const runtime = getKunRuntimeSettings(settings)
   const musicGeneration = runtime.musicGeneration
@@ -833,6 +838,7 @@ export function resolveKunRuntimeSettings(settings: AppSettingsV1): KunRuntimeSe
     imageGeneration: resolveKunImageGenerationSettings(settings),
     speechToText: resolveKunSpeechToTextSettings(settings),
     textToSpeech: resolveKunTextToSpeechSettings(settings),
+    imageRecognition: resolveKunImageRecognitionSettings(settings),
     musicGeneration: resolveKunMusicGenerationSettings(settings),
     videoGeneration: resolveKunVideoGenerationSettings(settings),
     modelProfiles: modelProviderModelProfilesForSettings(settings)

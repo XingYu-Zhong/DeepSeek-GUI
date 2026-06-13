@@ -16,8 +16,10 @@ import { SequentialIdGenerator } from '../src/ports/id-generator.js'
 import { createThreadRecord } from '../src/domain/thread.js'
 import { createImmutablePrefix } from '../src/cache/immutable-prefix.js'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../src/ports/model-client.js'
+import type { TurnItem } from '../src/contracts/items.js'
 import type { SkillRuntime } from '../src/skills/skill-runtime.js'
 import type { AttachmentStore } from '../src/attachments/attachment-store.js'
+import type { ImageRecognizer } from '../src/adapters/tool/image-recognition-tool-provider.js'
 import type { ModelCapabilityMetadata } from '../src/contracts/capabilities.js'
 import type { MemoryStore } from '../src/memory/memory-store.js'
 import type { TokenEconomyConfig } from '../src/loop/token-economy.js'
@@ -76,6 +78,8 @@ export function makeHarness(
     tools?: LocalTool[]
     skillRuntime?: SkillRuntime
     attachmentStore?: AttachmentStore
+    imageRecognizer?: ImageRecognizer
+    imageRecognitionEnabledAt?: string
     memoryStore?: MemoryStore
     modelCapabilities?: (model: string) => ModelCapabilityMetadata
     tokenEconomy?: TokenEconomyConfig
@@ -137,6 +141,8 @@ export function makeHarness(
     nowMs,
     ...(options.skillRuntime ? { skillRuntime: options.skillRuntime } : {}),
     ...(options.attachmentStore ? { attachmentStore: options.attachmentStore } : {}),
+    ...(options.imageRecognizer ? { imageRecognizer: options.imageRecognizer } : {}),
+    ...(options.imageRecognitionEnabledAt ? { imageRecognitionEnabledAt: options.imageRecognitionEnabledAt } : {}),
     ...(options.memoryStore ? { memoryStore: options.memoryStore } : {}),
     ...(options.modelCapabilities ? { modelCapabilities: options.modelCapabilities } : {}),
     ...(options.tokenEconomy ? { tokenEconomy: options.tokenEconomy } : {}),
@@ -175,12 +181,23 @@ export async function bootstrapThread(
   h: Harness,
   options: {
     workspace?: string
+    threadCreatedAt?: string
+    initialItems?: TurnItem[]
     request?: Parameters<TurnService['startTurn']>[0]['request']
   } = {}
 ): Promise<void> {
   await h.threadStore.upsert(
-    createThreadRecord({ id: h.threadId, title: 'demo', workspace: options.workspace ?? '/tmp', model: 'fake' })
+    createThreadRecord({
+      id: h.threadId,
+      title: 'demo',
+      workspace: options.workspace ?? '/tmp',
+      model: 'fake',
+      ...(options.threadCreatedAt ? { createdAt: options.threadCreatedAt } : {})
+    })
   )
+  for (const item of options.initialItems ?? []) {
+    await h.sessionStore.appendItem(h.threadId, item)
+  }
   const response = await h.turns.startTurn({
     threadId: h.threadId,
     request: options.request ?? { prompt: 'hello' }

@@ -28,6 +28,7 @@ import {
   KUN_DEBUG_LLM_ROUNDS_TEMPLATE
 } from '../../shared/kun-endpoints'
 import {
+  IMAGE_RECOGNITION_PROTOCOLS,
   IMAGE_GENERATION_PROTOCOLS,
   MUSIC_GENERATION_PROTOCOLS,
   MODEL_ENDPOINT_FORMATS,
@@ -201,6 +202,7 @@ const writeInlineCompletionModelSchema = z.union([
 ])
 const modelEndpointFormatSchema = z.enum(MODEL_ENDPOINT_FORMATS)
 const imageGenerationProtocolSchema = z.enum(IMAGE_GENERATION_PROTOCOLS)
+const imageRecognitionProtocolSchema = z.enum(IMAGE_RECOGNITION_PROTOCOLS)
 const speechToTextProtocolSchema = z.enum(SPEECH_TO_TEXT_PROTOCOLS)
 const textToSpeechProtocolSchema = z.enum(TEXT_TO_SPEECH_PROTOCOLS)
 const musicGenerationProtocolSchema = z.enum(MUSIC_GENERATION_PROTOCOLS)
@@ -367,6 +369,16 @@ const kunRuntimePatchSchema = z.object({
     format: z.string().trim().max(16).optional(),
     timeoutMs: z.number().int().positive().max(900_000).optional()
   }).strict().optional(),
+  imageRecognition: z.object({
+    enabled: z.boolean().optional(),
+    enabledAt: z.string().trim().max(64).optional(),
+    protocol: imageRecognitionProtocolSchema.optional(),
+    baseUrl: z.string().trim().max(MAX_URL_LENGTH).optional(),
+    apiKey: z.string().max(MAX_BODY_BYTES).optional(),
+    model: z.string().trim().max(128).optional(),
+    prompt: z.string().trim().max(2000).optional(),
+    timeoutMs: z.number().int().positive().max(600_000).optional()
+  }).strict().optional(),
   musicGeneration: z.object({
     enabled: z.boolean().optional(),
     providerId: z.string().trim().max(64).optional(),
@@ -389,8 +401,6 @@ const kunRuntimePatchSchema = z.object({
     timeoutMs: z.number().int().positive().max(3_600_000).optional(),
     pollIntervalMs: z.number().int().positive().max(120_000).optional()
   }).strict().optional(),
-  // 兼容旧版保存的独立视觉识别设置。当前能力已经迁移到 provider modelProfiles。
-  imageRecognition: z.unknown().optional(),
   modelProfiles: z.record(
     z.string().trim().min(1).max(128),
     modelProfilePatchSchema.nullable()

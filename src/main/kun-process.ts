@@ -28,6 +28,7 @@ import {
 import {
   AttachmentsCapabilityConfig,
   ImageGenCapabilityConfig,
+  ImageRecognitionCapabilityConfig,
   McpCapabilityConfig,
   McpServerConfig,
   MemoryCapabilityConfig,
@@ -355,6 +356,7 @@ export async function syncGuiManagedKunConfig(
     | 'runtimeTuning'
     | 'imageGeneration'
     | 'textToSpeech'
+    | 'imageRecognition'
     | 'musicGeneration'
     | 'videoGeneration'
     | 'modelProfiles'
@@ -389,6 +391,7 @@ export async function syncGuiManagedKunConfig(
   const skills = objectValue(capabilities.skills)
   const imageGen = objectValue(capabilities.imageGen)
   const speechGen = objectValue(capabilities.speechGen)
+  const imageRecognition = objectValue(capabilities.imageRecognition)
   const musicGen = objectValue(capabilities.musicGen)
   const videoGen = objectValue(capabilities.videoGen)
   const storage = storageConfigForRuntime(runtime.storage)
@@ -417,6 +420,7 @@ export async function syncGuiManagedKunConfig(
       skills: skillCapability,
       imageGen: imageGenConfigForRuntime(runtime.imageGeneration, imageGen),
       speechGen: speechGenConfigForRuntime(runtime.textToSpeech, speechGen),
+      imageRecognition: imageRecognitionConfigForRuntime(runtime.imageRecognition, imageRecognition),
       musicGen: musicGenConfigForRuntime(runtime.musicGeneration, musicGen),
       videoGen: videoGenConfigForRuntime(runtime.videoGeneration, videoGen),
       mcp: {
@@ -774,6 +778,31 @@ function speechGenConfigForRuntime(
   return next
 }
 
+function imageRecognitionConfigForRuntime(
+  imageRecognition: Pick<KunRuntimeSettingsV1, 'imageRecognition'>['imageRecognition'],
+  existing: Record<string, unknown>
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...existing,
+    enabled: imageRecognition.enabled,
+    timeoutMs: imageRecognition.timeoutMs,
+    prompt: imageRecognition.prompt
+  }
+  const fields = {
+    enabledAt: imageRecognition.enabled ? (imageRecognition.enabledAt ?? '') : '',
+    protocol: imageRecognition.protocol,
+    baseUrl: imageRecognition.baseUrl,
+    apiKey: imageRecognition.apiKey,
+    model: imageRecognition.model
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    const trimmed = value.trim()
+    if (trimmed) next[key] = trimmed
+    else delete next[key]
+  }
+  return next
+}
+
 function musicGenConfigForRuntime(
   musicGeneration: Pick<KunRuntimeSettingsV1, 'musicGeneration'>['musicGeneration'],
   existing: Record<string, unknown>
@@ -886,6 +915,9 @@ function sanitizeKunCapabilitiesConfig(value: unknown): Record<string, unknown> 
   if ('memory' in raw) next.memory = parseKunConfigSection(MemoryCapabilityConfig, raw.memory)
   if ('imageGen' in raw) next.imageGen = parseKunConfigSection(ImageGenCapabilityConfig, raw.imageGen)
   if ('speechGen' in raw) next.speechGen = parseKunConfigSection(SpeechGenCapabilityConfig, raw.speechGen)
+  if ('imageRecognition' in raw) {
+    next.imageRecognition = parseKunConfigSection(ImageRecognitionCapabilityConfig, raw.imageRecognition)
+  }
   if ('musicGen' in raw) next.musicGen = parseKunConfigSection(MusicGenCapabilityConfig, raw.musicGen)
   if ('videoGen' in raw) next.videoGen = parseKunConfigSection(VideoGenCapabilityConfig, raw.videoGen)
   return next

@@ -589,4 +589,24 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     expect(liveTurnProgressClass(true)).toContain('mb-16 md:mb-20')
     expect(liveTurnProgressClass(false)).not.toContain('mb-16 md:mb-20')
   })
+
+  it('renders progress bars for system runtime progress blocks', () => {
+    const block: ChatBlock = {
+      kind: 'system',
+      id: 'runtime_status_turn_1_image_recognition_progress',
+      text: '当前模型不支持图片输入，正在用视觉模型预识别图片（1/2）…',
+      progress: {
+        current: 1,
+        total: 2,
+        status: 'running'
+      }
+    }
+
+    const html = renderToStaticMarkup(createElement(MessageBubble, { block }))
+
+    expect(html).toContain('role="progressbar"')
+    expect(html).toContain('aria-valuenow="1"')
+    expect(html).toContain('aria-valuemax="2"')
+    expect(html).toContain('width:50%')
+  })
 })
