@@ -49,6 +49,7 @@ type MarketplaceItem = {
   description?: string
   group: 'recommended' | 'personal'
   sourceLabel?: string
+  detail?: string
   statusTone?: 'default' | 'success' | 'warning' | 'error'
   systemManaged?: boolean
   mcpConfig?: (workspaceRoot: string) => JsonRecord
@@ -327,11 +328,20 @@ export function mcpMarketplaceItemsFromConfigAndDiagnostics(
       status === 'error' || status === 'unavailable' ? labels.error :
       status === 'disabled' ? labels.disabled :
       labels.configured
+    const detail = mcpServerDescription(details, labels.configured)
+    const catalogItem = RECOMMENDED_ITEMS.find((entry) => entry.kind === 'mcp' && entry.id === id)
     return {
       id,
       kind: 'mcp' as const,
       title: id,
-      description: mcpServerDescription(details, labels.configured),
+      // Keep the catalog description for known servers so installing an item
+      // does not replace its human-readable intro with the raw status string (#211).
+      ...(catalogItem?.descriptionKey
+        ? { descriptionKey: catalogItem.descriptionKey }
+        : catalogItem?.description
+          ? { description: catalogItem.description }
+          : { description: detail }),
+      detail,
       group: 'personal' as const,
       sourceLabel,
       statusTone: mcpStatusTone(status)
@@ -1175,6 +1185,11 @@ function PluginSection({
                   <p className="mt-1 line-clamp-2 text-[14px] leading-5 text-ds-muted">
                     {itemDescription(item, t)}
                   </p>
+                  {item.detail && item.detail !== itemDescription(item, t) ? (
+                    <p className="mt-0.5 truncate font-mono text-[12px] text-ds-faint" title={item.detail}>
+                      {item.detail}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"

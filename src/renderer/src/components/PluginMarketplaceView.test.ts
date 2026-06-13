@@ -162,7 +162,8 @@ describe('PluginMarketplaceView MCP config helpers', () => {
         id: 'github',
         sourceLabel: 'Connected',
         statusTone: 'success',
-        description: expect.stringContaining('github-mcp')
+        descriptionKey: 'pluginMcpGithubDesc',
+        detail: expect.stringContaining('github-mcp')
       })
     ])
   })
